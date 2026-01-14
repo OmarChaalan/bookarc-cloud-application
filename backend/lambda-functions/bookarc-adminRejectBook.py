@@ -127,7 +127,7 @@ def lambda_handler(event, context):
                 
                 conn.commit()
                 
-                # 🔔 CREATE NOTIFICATION
+                # CREATE NOTIFICATION
                 if book['uploaded_by']:
                     notif_service = NotificationService(conn)
                     notif_service.notify_book_rejected(
