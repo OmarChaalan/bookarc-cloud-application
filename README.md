@@ -15,17 +15,18 @@ This project was developed as my **Cloud Computing graduation project**, focusin
 ## 🛠️ Technology Stack
 
 ### ☁️ Cloud & Backend
-- **AWS Lambda** – Serverless compute
+- **AWS Lambda** – Serverless compute (For both the recommendation and notification system)
 - **Amazon API Gateway** – REST API management
 - **Amazon RDS (MySQL)** – Relational database
 - **Amazon Cognito** – Authentication & user management
-- **Amazon SNS** – Notification system
 - **Amazon S3** – Static assets & image storage
 - **Amazon CloudFront** – Global content delivery
 - **Amazon VPC** – Network isolation and security
+- **AWS EC2** – For database Administration used a Bastion Host (Jump) and a Private EC2
 
 ### 🧱 Infrastructure as Code
-- **Terraform** – Provisioning all AWS resources
+- **Terraform** – Provisioned VPC, CloudFront, Front-end S3 Bucket, and RDS
+- **AWS Console** – Provisioned Cognito, API Gateway, Lambda Functions, EC2s, and S3 Buckets
 
 ### 🎨 Frontend
 - **React.js**
