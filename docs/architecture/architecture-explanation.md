@@ -36,9 +36,12 @@ security, and easy maintenance.
 ---
 
 ## Notification System
-- Amazon SNS is used to send notifications.
-- Backend services publish messages to SNS topics.
-- Notifications can be used for events such as new reviews or book updates.
+- Notifications are handled at the application level using a shared notification service.
+- A reusable `notification_service.py` layer is used by multiple Lambda functions.
+- Backend Lambda functions call this service to create and manage notifications.
+- Notifications are stored and retrieved through the backend APIs.
+- This design keeps notification logic centralized and reusable.
+
 
 ---
 
