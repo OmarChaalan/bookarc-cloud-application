@@ -1,4 +1,4 @@
-# 📚 BookArc – Cloud-Native Book Review & Recommendation Platform
+# 📚 BookArc – Cloud-Native Book Management & Recommendation Platform
 
 BookArc is a **cloud-native web application** that allows users to:
 - Browse and search for books
