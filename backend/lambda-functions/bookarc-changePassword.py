@@ -1,5 +1,4 @@
 """
-lambda-changePassword.py - UPDATED VERSION
 Uses access token from request body instead of header
 Includes notification on successful password change
 """
@@ -109,7 +108,7 @@ def lambda_handler(event, context):
             
             print(f"Password changed successfully in Cognito")
             
-            # 🔔 CREATE NOTIFICATION
+            # CREATE NOTIFICATION
             # Get user_id from Cognito token to send notification
             try:
                 # Get user info from access token
@@ -136,15 +135,15 @@ def lambda_handler(event, context):
                                 # Send notification
                                 notif_service = NotificationService(conn)
                                 notif_service.notify_password_changed(user['user_id'])
-                                print(f"✅ Notification sent to user {user['user_id']}")
+                                print(f"Notification sent to user {user['user_id']}")
                     finally:
                         conn.close()
                 else:
-                    print("⚠️ Could not extract cognito_sub from token")
+                    print("Could not extract cognito_sub from token")
                     
             except Exception as notif_error:
                 # Don't fail the password change if notification fails
-                print(f"⚠️ Failed to send notification: {str(notif_error)}")
+                print(f"Failed to send notification: {str(notif_error)}")
             
             return {
                 'statusCode': 200,
