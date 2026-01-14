@@ -1,42 +1,64 @@
-# 📚 BookHub – Cloud-Native Book Review & Recommendation Platform
+# 📚 BookArc – Cloud-Native Book Review & Recommendation Platform
 
-BookHub is a cloud-native web application where users can browse books, rate books, write reviews, manage reading lists, compare book prices, and receive personalized recommendations using AWS services.
+BookArc is a **cloud-native web application** that allows users to:
+- Browse and search for books
+- Rate and review books
+- Manage personal reading lists
+- Compare book prices
+- Receive personalized book recommendations
+- Get system notifications (e.g., new reviews, book updates)
 
-Built as my **Cloud Computing graduation project**, using:
+This project was developed as my **Cloud Computing graduation project**, focusing on **serverless architecture, scalability, and infrastructure as code**.
 
-- ☁️ **AWS** – Lambda, API Gateway, RDS (MySQL), Cognito, S3, CloudFront, VPC  
-- 🛠️ **Terraform** – Infrastructure as Code for all cloud resources  
-- 🧠 **Serverless backend** – Lambda functions for all business logic  
-- 🎨 **Frontend** – React (hosted on S3 and distributed via CloudFront)
-- 🔔 **Notification System** – Built using AWS SNS
+---
+
+## 🛠️ Technology Stack
+
+### ☁️ Cloud & Backend
+- **AWS Lambda** – Serverless compute
+- **Amazon API Gateway** – REST API management
+- **Amazon RDS (MySQL)** – Relational database
+- **Amazon Cognito** – Authentication & user management
+- **Amazon SNS** – Notification system
+- **Amazon S3** – Static assets & image storage
+- **Amazon CloudFront** – Global content delivery
+- **Amazon VPC** – Network isolation and security
+
+### 🧱 Infrastructure as Code
+- **Terraform** – Provisioning all AWS resources
+
+### 🎨 Frontend
+- **React.js**
+- Hosted on **S3** and delivered via **CloudFront**
 
 ---
 
 ## 🏗️ Cloud Architecture
 
-This is the cloud architecture for BookHub:
+High-level architecture of the BookArc platform:
 
-![Cloud Architecture]()
+![Cloud Architecture](docs/architecture/bookarc-architecture.png)
+
+📄 Detailed explanation:  
+👉 [`docs/architecture/architecture-explanation.md`](docs/architecture/architecture-explanation.md)
 
 ---
 
-## 🗄️ Database ERD
+## 🗄️ Database Design (ERD)
 
-The relational database schema (MySQL on RDS) powering BookHub:
+Relational database schema used by the application (MySQL on RDS):
 
-![Database ERD]()
+![Database ERD](docs/erd/bookarc-erd.png)
+
+📄 Entity descriptions:  
+👉 [`docs/erd/erd-description.md`](docs/erd/erd-description.md)
 
 ---
 
 ## 📁 Repository Structure
 
 ```text
-bookhub/
-- docs/
-   - architecture/        # The Cloud Architecture Diagram 
-   - erd/                 # The Database ERD Diagram
-
-- terraform/              # Terraform IaC
-- backend/                # Lambda functions & API code
-- frontend/               # React frontend source code
-- README.md               # Project documentation
+docs/         → Architecture diagrams, ERD, screenshots
+terraform/    → Infrastructure as Code (AWS resources)
+backend/      → Lambda functions & business logic
+frontend/     → React frontend application
