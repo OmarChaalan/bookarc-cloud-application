@@ -217,7 +217,7 @@ def lambda_handler(event, context):
                 
                 conn.commit()
                 
-                # 🔔 CREATE NOTIFICATION
+                # CREATE NOTIFICATION
                 notif_service = NotificationService(conn)
                 notif_service.notify_book_submitted(user['user_id'], title)
                 
