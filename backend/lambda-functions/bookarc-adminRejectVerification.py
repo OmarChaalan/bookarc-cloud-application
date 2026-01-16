@@ -153,7 +153,7 @@ def lambda_handler(event, context):
             
             connection.commit()
             
-            # CREATE NOTIFICATION using NotificationService
+            # 🔔 CREATE NOTIFICATION using NotificationService
             notif_service = NotificationService(connection)
             notif_service.notify_verification_rejected(user_id, rejection_reason)
         
