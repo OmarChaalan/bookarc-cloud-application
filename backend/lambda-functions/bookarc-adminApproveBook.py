@@ -213,7 +213,7 @@ def lambda_handler(event, context):
                 
                 connection.commit()
                 
-                # CREATE NOTIFICATIONS
+                # 🔔 CREATE NOTIFICATIONS
                 notif_service = NotificationService(connection)
                 
                 # Notify the author
