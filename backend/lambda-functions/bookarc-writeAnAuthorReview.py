@@ -11,280 +11,172 @@ DB_NAME = os.environ.get('DB_NAME')
 
 def get_db_connection():
     return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        charset='utf8mb4',
+        host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
+        database=DB_NAME, charset='utf8mb4',
         cursorclass=pymysql.cursors.DictCursor
     )
+
+def response(status_code, body):
+    """Helper to create consistent API responses"""
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps(body)
+    }
+
+def get_user_from_cognito(connection, cognito_sub):
+    """Get user details from cognito_sub"""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT user_id, username, display_name, profile_image, role FROM users WHERE cognito_sub = %s",
+            (cognito_sub,)
+        )
+        return cursor.fetchone()
+
+def get_author(connection, author_id):
+    """Get author details"""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT author_id, name, user_id as author_user_id FROM authors WHERE author_id = %s",
+            (author_id,)
+        )
+        return cursor.fetchone()
 
 def lambda_handler(event, context):
     """
     Handle author review operations
-    
-    POST /author/{user_id}/review - Write a review
-    GET /author/{user_id}/review - Get user's review
-    PUT /author/{user_id}/review - Update user's review
-    DELETE /author/{user_id}/review - Delete user's review
-    GET /author/{user_id}/reviews - Get all reviews for author (PUBLIC)
+    POST   /author/{user_id}/review  - Write review
+    GET    /author/{user_id}/review  - Get user's review
+    PUT    /author/{user_id}/review  - Update review
+    DELETE /author/{user_id}/review  - Delete review
+    GET    /author/{user_id}/reviews - Get all reviews (PUBLIC)
     """
     
     print(f"Event: {json.dumps(event)}")
     
     http_method = event.get('httpMethod')
-    path_parameters = event.get('pathParameters', {})
+    path = event.get('path', '')
+    author_id = event.get('pathParameters', {}).get('user_id')
     
-    # ✅ FIXED: Get from 'user_id' path parameter (API Gateway uses {user_id})
-    author_id = path_parameters.get('user_id')
-    
-    print(f"📍 Path parameters: {path_parameters}")
-    print(f"📍 Author ID from path: {author_id}")
-    
-    # GET /author/{user_id}/reviews doesn't require authentication (public endpoint)
-    if event.get('path', '').endswith('/reviews') and http_method == 'GET':
-        print("ℹ️ Public endpoint: /reviews - no auth required")
+    # Public endpoint: GET /reviews
+    if path.endswith('/reviews') and http_method == 'GET':
         return get_all_reviews(author_id)
     
-    # All other endpoints require authentication
-    request_context = event.get('requestContext', {})
-    authorizer = request_context.get('authorizer', {})
-    claims = authorizer.get('claims', {})
-    cognito_sub = claims.get('sub')
-    
-    print(f"🔐 Cognito sub: {cognito_sub}")
-    print(f"🔐 Full claims: {claims}")
+    # Authenticate user for private endpoints
+    cognito_sub = event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('sub')
     
     if not cognito_sub:
-        print("❌ No Cognito claims found")
-        return {
-            'statusCode': 401,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Unauthorized - Authentication required'})
-        }
+        return response(401, {'message': 'Unauthorized - Authentication required'})
     
     if not author_id:
-        print("❌ No author_id in path")
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Missing author_id in path'})
-        }
+        return response(400, {'message': 'Missing author_id in path'})
     
     connection = None
     
     try:
         connection = get_db_connection()
         
-        # Get user_id from cognito_sub
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT user_id, username, display_name, profile_image, role FROM users WHERE cognito_sub = %s",
-                (cognito_sub,)
-            )
-            user = cursor.fetchone()
-            
-            if not user:
-                print(f"❌ User not found for cognito_sub: {cognito_sub}")
-                return {
-                    'statusCode': 404,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'message': 'User not found'})
-                }
-            
-            user_id = user['user_id']
-            user_role = user['role']
-            print(f"✅ Found user: user_id={user_id}, role={user_role}")
+        # Get current user
+        user = get_user_from_cognito(connection, cognito_sub)
+        if not user:
+            return response(404, {'message': 'User not found'})
         
-        # Check if author exists
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT a.author_id, a.name, a.user_id as author_user_id
-                FROM authors a
-                WHERE a.author_id = %s
-                """,
-                (author_id,)
-            )
-            author = cursor.fetchone()
-            
-            if not author:
-                print(f"❌ Author not found: author_id={author_id}")
-                return {
-                    'statusCode': 404,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'message': 'Author not found'})
-                }
-            
-            print(f"✅ Found author: {author['name']}, author_user_id={author['author_user_id']}")
+        user_id = user['user_id']
         
-        # Prevent users from reviewing themselves
+        # Get author details
+        author = get_author(connection, author_id)
+        if not author:
+            return response(404, {'message': 'Author not found'})
+        
+        # Prevent self-review
         if author['author_user_id'] and author['author_user_id'] == user_id:
-            print(f"❌ User {user_id} trying to review themselves")
-            return {
-                'statusCode': 403,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({'message': 'You cannot review yourself'})
-            }
+            return response(403, {'message': 'You cannot review yourself'})
         
-        # Prevent admins from reviewing
-        if user_role == 'admin':
-            print(f"❌ Admin user {user_id} trying to review author")
-            return {
-                'statusCode': 403,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({'message': 'Admins cannot review authors'})
-            }
+        # Prevent admin reviews
+        if user['role'] == 'admin':
+            return response(403, {'message': 'Admins cannot review authors'})
         
-        if http_method == 'POST':
-            return create_review(connection, user_id, user, author_id, event)
-        elif http_method == 'GET':
-            return get_user_review(connection, user_id, author_id)
-        elif http_method == 'PUT':
-            return update_review(connection, user_id, author_id, event)
-        elif http_method == 'DELETE':
-            return delete_review(connection, user_id, author_id)
-        else:
-            return {
-                'statusCode': 405,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({'message': 'Method not allowed'})
-            }
+        # Route to appropriate handler
+        handlers = {
+            'POST': lambda: create_review(connection, user_id, user, author_id, event),
+            'GET': lambda: get_user_review(connection, user_id, author_id),
+            'PUT': lambda: update_review(connection, user_id, author_id, event),
+            'DELETE': lambda: delete_review(connection, user_id, author_id)
+        }
+        
+        handler = handlers.get(http_method)
+        if not handler:
+            return response(405, {'message': 'Method not allowed'})
+        
+        return handler()
     
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         import traceback
-        print(f"Traceback: {traceback.format_exc()}")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': f'Internal server error: {str(e)}'})
-        }
+        print(traceback.format_exc())
+        return response(500, {'message': f'Internal server error: {str(e)}'})
     
     finally:
         if connection:
             connection.close()
 
+def validate_review_text(review_text):
+    """Validate review text"""
+    if not review_text or len(review_text.strip()) < 10:
+        return 'Review must be at least 10 characters long'
+    if len(review_text) > 5000:
+        return 'Review must not exceed 5000 characters'
+    return None
+
 def create_review(connection, user_id, user, author_id, event):
-    """Create a review for an author"""
-    
+    """Create a new review"""
     try:
         body = json.loads(event.get('body', '{}'))
     except json.JSONDecodeError:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Invalid JSON in request body'})
-        }
+        return response(400, {'message': 'Invalid JSON in request body'})
     
     review_text = body.get('review_text', '').strip()
     
-    if not review_text or len(review_text) < 10:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Review must be at least 10 characters long'})
-        }
-    
-    if len(review_text) > 5000:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Review must not exceed 5000 characters'})
-        }
+    # Validate
+    error = validate_review_text(review_text)
+    if error:
+        return response(400, {'message': error})
     
     try:
         with connection.cursor() as cursor:
-            # Check if user already reviewed this author
+            # Check for existing review
             cursor.execute(
-                """
-                SELECT author_review_id 
-                FROM author_reviews 
-                WHERE user_id = %s AND author_id = %s
-                """,
+                "SELECT author_review_id FROM author_reviews WHERE user_id = %s AND author_id = %s",
                 (user_id, author_id)
             )
-            existing_review = cursor.fetchone()
             
-            if existing_review:
-                return {
-                    'statusCode': 409,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'message': 'You have already reviewed this author. Use PUT to update your review.'
-                    })
-                }
+            if cursor.fetchone():
+                return response(409, {'message': 'You have already reviewed this author. Use PUT to update.'})
             
-            # Insert new review
+            # Insert review
             cursor.execute(
-                """
-                INSERT INTO author_reviews (review_text, user_id, author_id)
-                VALUES (%s, %s, %s)
-                """,
+                "INSERT INTO author_reviews (review_text, user_id, author_id) VALUES (%s, %s, %s)",
                 (review_text, user_id, author_id)
             )
             
             review_id = cursor.lastrowid
             connection.commit()
             
-            display_name = user['display_name'] or user['username']
-            print(f"✅ Created review: user_id={user_id}, author_id={author_id}, review_id={review_id}")
-            
-            return {
-                'statusCode': 201,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'message': 'Review submitted successfully',
-                    'review': {
-                        'author_review_id': review_id,
-                        'user_id': user_id,
-                        'username': display_name,
-                        'avatar_url': user['profile_image'],
-                        'author_id': int(author_id),
-                        'review_text': review_text,
-                        'created_at': datetime.now().isoformat()
-                    }
-                })
-            }
+            return response(201, {
+                'message': 'Review submitted successfully',
+                'review': {
+                    'author_review_id': review_id,
+                    'user_id': user_id,
+                    'username': user['display_name'] or user['username'],
+                    'avatar_url': user['profile_image'],
+                    'author_id': int(author_id),
+                    'review_text': review_text,
+                    'created_at': datetime.now().isoformat()
+                }
+            })
     
     except Exception as e:
         connection.rollback()
@@ -292,18 +184,11 @@ def create_review(connection, user_id, user, author_id, event):
 
 def get_user_review(connection, user_id, author_id):
     """Get user's review for an author"""
-    
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT 
-                ar.author_review_id,
-                ar.review_text,
-                ar.created_at,
-                ar.updated_at,
-                u.username,
-                u.display_name,
-                u.profile_image
+            SELECT ar.author_review_id, ar.review_text, ar.created_at, ar.updated_at,
+                   u.username, u.display_name, u.profile_image
             FROM author_reviews ar
             JOIN users u ON ar.user_id = u.user_id
             WHERE ar.user_id = %s AND ar.author_id = %s
@@ -313,107 +198,49 @@ def get_user_review(connection, user_id, author_id):
         review = cursor.fetchone()
         
         if not review:
-            return {
-                'statusCode': 404,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({'message': 'No review found'})
+            return response(404, {'message': 'No review found'})
+        
+        return response(200, {
+            'review': {
+                'author_review_id': review['author_review_id'],
+                'username': review['display_name'] or review['username'],
+                'avatar_url': review['profile_image'],
+                'review_text': review['review_text'],
+                'created_at': review['created_at'].isoformat() if review['created_at'] else None,
+                'updated_at': review['updated_at'].isoformat() if review['updated_at'] else None
             }
-        
-        display_name = review['display_name'] or review['username']
-        
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'review': {
-                    'author_review_id': review['author_review_id'],
-                    'username': display_name,
-                    'avatar_url': review['profile_image'],
-                    'review_text': review['review_text'],
-                    'created_at': review['created_at'].isoformat() if review['created_at'] else None,
-                    'updated_at': review['updated_at'].isoformat() if review['updated_at'] else None
-                }
-            })
-        }
+        })
 
 def update_review(connection, user_id, author_id, event):
     """Update user's review"""
-    
     try:
         body = json.loads(event.get('body', '{}'))
     except json.JSONDecodeError:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Invalid JSON in request body'})
-        }
+        return response(400, {'message': 'Invalid JSON in request body'})
     
     review_text = body.get('review_text', '').strip()
     
-    if not review_text or len(review_text) < 10:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Review must be at least 10 characters long'})
-        }
-    
-    if len(review_text) > 5000:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': 'Review must not exceed 5000 characters'})
-        }
+    # Validate
+    error = validate_review_text(review_text)
+    if error:
+        return response(400, {'message': error})
     
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                """
-                UPDATE author_reviews 
-                SET review_text = %s
-                WHERE user_id = %s AND author_id = %s
-                """,
+                "UPDATE author_reviews SET review_text = %s WHERE user_id = %s AND author_id = %s",
                 (review_text, user_id, author_id)
             )
             
             if cursor.rowcount == 0:
-                return {
-                    'statusCode': 404,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'message': 'No review found to update'})
-                }
+                return response(404, {'message': 'No review found to update'})
             
             connection.commit()
-            print(f"✅ Updated review: user_id={user_id}, author_id={author_id}")
             
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'message': 'Review updated successfully',
-                    'review_text': review_text
-                })
-            }
+            return response(200, {
+                'message': 'Review updated successfully',
+                'review_text': review_text
+            })
     
     except Exception as e:
         connection.rollback()
@@ -421,46 +248,26 @@ def update_review(connection, user_id, author_id, event):
 
 def delete_review(connection, user_id, author_id):
     """Delete user's review"""
-    
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                """
-                DELETE FROM author_reviews
-                WHERE user_id = %s AND author_id = %s
-                """,
+                "DELETE FROM author_reviews WHERE user_id = %s AND author_id = %s",
                 (user_id, author_id)
             )
             
             if cursor.rowcount == 0:
-                return {
-                    'statusCode': 404,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'message': 'No review found to delete'})
-                }
+                return response(404, {'message': 'No review found to delete'})
             
             connection.commit()
-            print(f"✅ Deleted review: user_id={user_id}, author_id={author_id}")
             
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({'message': 'Review deleted successfully'})
-            }
+            return response(200, {'message': 'Review deleted successfully'})
     
     except Exception as e:
         connection.rollback()
         raise e
 
 def get_all_reviews(author_id):
-    """Get all reviews for an author (public endpoint - no auth required)"""
-    
+    """Get all reviews for an author (PUBLIC - no auth required)"""
     connection = None
     
     try:
@@ -469,15 +276,8 @@ def get_all_reviews(author_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT 
-                    ar.author_review_id,
-                    ar.review_text,
-                    ar.created_at,
-                    ar.updated_at,
-                    u.user_id,
-                    u.username,
-                    u.display_name,
-                    u.profile_image
+                SELECT ar.author_review_id, ar.review_text, ar.created_at, ar.updated_at,
+                       u.user_id, u.username, u.display_name, u.profile_image
                 FROM author_reviews ar
                 JOIN users u ON ar.user_id = u.user_id
                 WHERE ar.author_id = %s
@@ -487,45 +287,29 @@ def get_all_reviews(author_id):
             )
             reviews = cursor.fetchall()
             
-            formatted_reviews = []
-            for review in reviews:
-                display_name = review['display_name'] or review['username']
-                formatted_reviews.append({
-                    'author_review_id': review['author_review_id'],
-                    'user_id': review['user_id'],
-                    'username': display_name,
-                    'avatar_url': review['profile_image'],
-                    'review_text': review['review_text'],
-                    'created_at': review['created_at'].isoformat() if review['created_at'] else None,
-                    'updated_at': review['updated_at'].isoformat() if review['updated_at'] else None
-                })
+            formatted_reviews = [
+                {
+                    'author_review_id': r['author_review_id'],
+                    'user_id': r['user_id'],
+                    'username': r['display_name'] or r['username'],
+                    'avatar_url': r['profile_image'],
+                    'review_text': r['review_text'],
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                    'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None
+                }
+                for r in reviews
+            ]
             
-            print(f"✅ Retrieved {len(formatted_reviews)} reviews for author_id={author_id}")
-            
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'reviews': formatted_reviews,
-                    'total': len(formatted_reviews)
-                })
-            }
+            return response(200, {
+                'reviews': formatted_reviews,
+                'total': len(formatted_reviews)
+            })
     
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         import traceback
-        print(f"Traceback: {traceback.format_exc()}")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({'message': f'Internal server error: {str(e)}'})
-        }
+        print(traceback.format_exc())
+        return response(500, {'message': f'Internal server error: {str(e)}'})
     
     finally:
         if connection:
