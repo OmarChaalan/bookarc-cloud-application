@@ -38,7 +38,7 @@ This project was developed as my **Cloud Computing graduation project**, focusin
 
 High-level architecture of the BookArc platform:
 
-![Cloud Architecture](docs/architecture/bookarc-architecture.png)
+![Cloud Architecture](docs/architecture/bookarc-cloud-architecture.png)
 
 📄 Detailed explanation:  
 👉 [`docs/architecture/architecture-explanation.md`](docs/architecture/architecture-explanation.md)
