@@ -50,8 +50,8 @@ The cloud architecture of the BookArc platform:
 Relational database schema used by BookArc (MySQL on RDS):
 
 ![Database ERD](docs/erd/bookarc-erd1.png)
-![Database ERD](docs/erd/bookarc-erd1.png)
-![Database ERD](docs/erd/bookarc-erd1.png)
+![Database ERD](docs/erd/bookarc-erd2.png)
+![Database ERD](docs/erd/bookarc-erd3.png)
 
 📄 Entity descriptions:  
 👉 [`docs/erd/erd-description.md`](docs/erd/erd-description.md)
