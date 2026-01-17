@@ -36,7 +36,7 @@ This project was developed as my **Cloud Computing graduation project**, focusin
 
 ## 🏗️ Cloud Architecture
 
-High-level architecture of the BookArc platform:
+The cloud architecture of the BookArc platform:
 
 ![Cloud Architecture](docs/architecture/bookarc-cloud-architecture.png)
 
@@ -47,9 +47,11 @@ High-level architecture of the BookArc platform:
 
 ## 🗄️ Database Design (ERD)
 
-Relational database schema used by the application (MySQL on RDS):
+Relational database schema used by BookArc (MySQL on RDS):
 
-![Database ERD](docs/erd/bookarc-erd.png)
+![Database ERD](docs/erd/bookarc-erd1.png)
+![Database ERD](docs/erd/bookarc-erd1.png)
+![Database ERD](docs/erd/bookarc-erd1.png)
 
 📄 Entity descriptions:  
 👉 [`docs/erd/erd-description.md`](docs/erd/erd-description.md)
