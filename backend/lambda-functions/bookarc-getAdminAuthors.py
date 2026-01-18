@@ -78,7 +78,7 @@ def lambda_handler(event, context):
             with connection.cursor() as cursor:
                 # Check if user is admin
                 if not check_admin_role(cognito_sub, cursor):
-                    print(f"❌ User {cognito_sub} is not admin")
+                    print(f"User {cognito_sub} is not admin")
                     return cors_response(403, {'error': 'Forbidden - Admin access required'})
                 
                 # Build query - join with users table to get email
@@ -140,7 +140,7 @@ def lambda_handler(event, context):
             connection.close()
         
     except Exception as e:
-        print(f"❌ Error getting admin authors: {str(e)}")
+        print(f"Error getting admin authors: {str(e)}")
         import traceback
         traceback.print_exc()
         return cors_response(500, {
