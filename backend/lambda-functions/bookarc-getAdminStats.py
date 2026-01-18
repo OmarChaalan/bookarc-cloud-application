@@ -68,10 +68,10 @@ def lambda_handler(event, context):
             with connection.cursor() as cursor:
                 # Check if user is admin from database
                 if not check_admin_role(cognito_sub, cursor):
-                    print(f"❌ User {cognito_sub} is not admin")
+                    print(f"User {cognito_sub} is not admin")
                     return cors_response(403, {'error': 'Forbidden - Admin access required'})
                 
-                print(f"✅ User {cognito_sub} is admin")
+                print(f"User {cognito_sub} is admin")
                 
                 # Get total users
                 cursor.execute("SELECT COUNT(*) as total FROM users")
@@ -97,7 +97,7 @@ def lambda_handler(event, context):
                 # For now, setting it to 0
                 pending_reports = 0
                 
-                # ✅ NEW: Get pending author verification requests
+                # Get pending author verification requests
                 cursor.execute("""
                     SELECT COUNT(*) as total 
                     FROM author_verification_requests 
@@ -105,7 +105,7 @@ def lambda_handler(event, context):
                 """)
                 pending_verifications = cursor.fetchone()['total']
                 
-                # ✅ NEW: Get pending books
+                # Get pending books
                 cursor.execute("""
                     SELECT COUNT(*) as total 
                     FROM books 
@@ -154,21 +154,21 @@ def lambda_handler(event, context):
                     'totalAuthors': total_authors,
                     'totalBooks': total_books,
                     'pendingReports': pending_reports,
-                    'pendingVerifications': pending_verifications,  # ✅ NEW
-                    'pendingBooks': pending_books,                  # ✅ NEW
+                    'pendingVerifications': pending_verifications,  
+                    'pendingBooks': pending_books,                 
                     'usersGrowth': users_growth,
                     'authorsGrowth': authors_growth,
                     'booksGrowth': books_growth
                 }
                 
-                print(f"✅ Returning stats: {json.dumps(stats)}")
+                print(f"Returning stats: {json.dumps(stats)}")
                 return cors_response(200, stats)
                 
         finally:
             connection.close()
             
     except Exception as e:
-        print(f"❌ Error getting admin stats: {str(e)}")
+        print(f"Error getting admin stats: {str(e)}")
         import traceback
         traceback.print_exc()
         return cors_response(500, {
