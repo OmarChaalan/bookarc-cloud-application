@@ -10,7 +10,7 @@ def lambda_handler(event, context):
     INCLUDING author rating and review statistics
     """
     
-    # ✅ CRITICAL: Add decimal_default function
+    # CRITICAL: Add decimal_default function
     def decimal_default(obj):
         if isinstance(obj, Decimal):
             return float(obj)
@@ -60,7 +60,7 @@ def lambda_handler(event, context):
             
             user_id = user['user_id']
             
-            # ✅ FIXED: Get author profile with pre-calculated average_rating
+            # Get author profile with pre-calculated average_rating
             cursor.execute("""
                 SELECT 
                     a.author_id,
@@ -85,8 +85,8 @@ def lambda_handler(event, context):
             
             author_id = author['author_id']
             
-            print(f"✅ Found author: {author['name']} (ID: {author_id})")
-            print(f"✅ Author average_rating from DB: {author['average_rating']}")
+            print(f"Found author: {author['name']} (ID: {author_id})")
+            print(f"Author average_rating from DB: {author['average_rating']}")
             
             # Get all books with detailed statistics
             cursor.execute("""
@@ -180,7 +180,7 @@ def lambda_handler(event, context):
             else:
                 overall_avg_rating = 0.0
             
-            # ✅ FIXED: Get author rating statistics using author_id
+            # Get author rating statistics using author_id
             # Get the rating breakdown from author_ratings table
             cursor.execute("""
                 SELECT 
@@ -205,16 +205,16 @@ def lambda_handler(event, context):
             
             author_review_result = cursor.fetchone()
             
-            # ✅ CRITICAL: Use average_rating from authors table (pre-calculated by trigger)
+            # Use average_rating from authors table (pre-calculated by trigger)
             author_avg_rating = float(author['average_rating']) if author['average_rating'] else 0.0
             
-            print(f"✅ Author rating stats:")
+            print(f"Author rating stats:")
             print(f"   - Average: {author_avg_rating}")
             print(f"   - Total Ratings: {author_rating_result['total_ratings']}")
             print(f"   - Total Reviews: {author_review_result['total_reviews']}")
             
             author_rating_stats = {
-                'avgRating': author_avg_rating,  # ✅ From authors.average_rating
+                'avgRating': author_avg_rating,  # From authors.average_rating
                 'totalRatings': author_rating_result['total_ratings'] or 0,
                 'totalReviews': author_review_result['total_reviews'] or 0,
                 'ratingBreakdown': {
@@ -237,13 +237,13 @@ def lambda_handler(event, context):
                     'total_ratings': total_ratings_count,
                     'overall_avg_rating': round(overall_avg_rating, 1)
                 },
-                'author_stats': author_rating_stats,  # ✅ Includes avgRating, totalRatings, totalReviews, ratingBreakdown
-                'author_id': author_id  # ✅ Critical for frontend
+                'author_stats': author_rating_stats,  # Includes avgRating, totalRatings, totalReviews, ratingBreakdown
+                'author_id': author_id  # Critical for frontend
             }
             
-            print(f"✅ Final response author_stats: {author_rating_stats}")
+            print(f"Final response author_stats: {author_rating_stats}")
             
-            # ✅ FIXED: Use decimal_default when serializing JSON
+            # Use decimal_default when serializing JSON
             return {
                 'statusCode': 200,
                 'headers': {
@@ -254,7 +254,7 @@ def lambda_handler(event, context):
             }
             
     except KeyError as e:
-        print(f"❌ KeyError: {str(e)}")
+        print(f"KeyError: {str(e)}")
         print(f"Event: {json.dumps(event)}")
         import traceback
         traceback.print_exc()
@@ -267,7 +267,7 @@ def lambda_handler(event, context):
             'body': json.dumps({'error': 'Unauthorized - Invalid token', 'details': str(e)})
         }
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return {
