@@ -108,7 +108,7 @@ def lambda_handler(event, context):
                 admin_user_id, is_admin = check_admin_role(cognito_sub, cursor)
                 
                 if not is_admin:
-                    print(f"❌ User {cognito_sub} is not admin")
+                    print(f"User {cognito_sub} is not admin")
                     return cors_response(403, {'error': 'Forbidden - Admin access required'})
                 
                 # Insert book
@@ -203,8 +203,8 @@ def lambda_handler(event, context):
                 
                 connection.commit()
                 
-                print(f"✅ Book '{title}' (ID: {book_id}) added successfully by admin {admin_user_id}")
-                
+                print(f"Book '{title}' (ID: {book_id}) added successfully by admin {admin_user_id}")
+            
                 return cors_response(200, {
                     'message': 'Book added successfully',
                     'book': {
@@ -223,7 +223,7 @@ def lambda_handler(event, context):
             connection.close()
         
     except Exception as e:
-        print(f"❌ Error adding book: {str(e)}")
+        print(f"Error adding book: {str(e)}")
         import traceback
         traceback.print_exc()
         return cors_response(500, {
