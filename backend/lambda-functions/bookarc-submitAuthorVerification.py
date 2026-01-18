@@ -6,6 +6,15 @@ import base64
 import uuid
 import pymysql
 
+# Import notification service (from Lambda Layer)
+try:
+    from notification_service import NotificationService
+    NOTIFICATIONS_ENABLED = True
+except ImportError:
+    print("notification_service not available, notifications disabled")
+    NOTIFICATIONS_ENABLED = False
+    NotificationService = None
+
 s3 = boto3.client('s3')
 
 # Database configuration from environment variables
@@ -66,8 +75,11 @@ def lambda_handler(event, context):
             verification_status = user_result['verification_status'] if user_result['verification_status'] else 'none'
             user_role = user_result['role']
             
+            print(f"User: {username} (ID: {db_user_id}), Role: {user_role}, Status: {verification_status}")
+            
             # Check if already an author or has pending/approved verification
             if user_role == 'author':
+                print(f"User {db_user_id} is already an author")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -81,6 +93,7 @@ def lambda_handler(event, context):
                 }
             
             if verification_status in ['pending', 'approved']:
+                print(f"User {db_user_id} already has verification status: {verification_status}")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -99,8 +112,11 @@ def lambda_handler(event, context):
             id_card_base64 = body.get('id_card_image')  # Base64 encoded image
             selfie_base64 = body.get('selfie_image')    # Base64 encoded image
             
+            print(f"Verification request: Full name: {full_name}")
+            
             # Validation
             if not full_name:
+                print("Full name is missing")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -111,6 +127,7 @@ def lambda_handler(event, context):
                 }
             
             if not id_card_base64 or not selfie_base64:
+                print("Images are missing")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -124,12 +141,15 @@ def lambda_handler(event, context):
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             unique_id = str(uuid.uuid4())[:8]
             
+            print(f"Uploading images to S3...")
+            
             # Upload ID card
             id_card_key = f"verification/{db_user_id}/{timestamp}_{unique_id}_id_card.jpg"
             id_card_data = base64.b64decode(id_card_base64.split(',')[1] if ',' in id_card_base64 else id_card_base64)
             
             # Validate file size (max 5MB)
             if len(id_card_data) > 5 * 1024 * 1024:
+                print(f"ID card image too large: {len(id_card_data)} bytes")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -146,6 +166,7 @@ def lambda_handler(event, context):
                 ContentType='image/jpeg'
             )
             id_card_url = f"https://{VERIFICATION_BUCKET}.s3.amazonaws.com/{id_card_key}"
+            print(f"ID card uploaded: {id_card_url}")
             
             # Upload selfie
             selfie_key = f"verification/{db_user_id}/{timestamp}_{unique_id}_selfie.jpg"
@@ -153,6 +174,7 @@ def lambda_handler(event, context):
             
             # Validate file size (max 5MB)
             if len(selfie_data) > 5 * 1024 * 1024:
+                print(f"Selfie image too large: {len(selfie_data)} bytes")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -169,6 +191,7 @@ def lambda_handler(event, context):
                 ContentType='image/jpeg'
             )
             selfie_url = f"https://{VERIFICATION_BUCKET}.s3.amazonaws.com/{selfie_key}"
+            print(f"Selfie uploaded: {selfie_url}")
             
             # Check if user has already submitted today (prevent spam)
             check_query = """
@@ -183,6 +206,7 @@ def lambda_handler(event, context):
             check_result = cursor.fetchone()
             
             if check_result:
+                print(f"User {db_user_id} already submitted a request today")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -195,6 +219,7 @@ def lambda_handler(event, context):
                 }
             
             # Insert verification request
+            print(f"Inserting verification request into database...")
             insert_query = """
                 INSERT INTO author_verification_requests 
                 (user_id, full_name, id_image_url, selfie_image_url, status, submitted_at)
@@ -213,6 +238,29 @@ def lambda_handler(event, context):
             cursor.execute(update_user_query, (db_user_id,))
             
             connection.commit()
+            
+            print(f"Verification request submitted successfully for user {db_user_id}")
+            
+            # SEND NOTIFICATION
+            if NOTIFICATIONS_ENABLED and NotificationService:
+                try:
+                    notif_service = NotificationService(connection)
+                    
+                    # Create notification for submission
+                    message = "Your author verification has been successfully submitted and is now pending review. We'll notify you once it's been reviewed."
+                    notif_service.create_notification(
+                        user_id=db_user_id,
+                        message=message,
+                        notification_type='verification_submitted',
+                        audience_type='normal'
+                    )
+                    
+                    print(f"Notification sent to user {db_user_id}")
+                except Exception as notif_error:
+                    print(f"Failed to send notification: {str(notif_error)}")
+                    # Don't fail the request if notification fails
+            else:
+                print("Notifications disabled or service unavailable")
         
         return {
             'statusCode': 201,
@@ -229,6 +277,9 @@ def lambda_handler(event, context):
         
     except Exception as e:
         print(f"Error: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        
         if connection:
             connection.rollback()
         return {
