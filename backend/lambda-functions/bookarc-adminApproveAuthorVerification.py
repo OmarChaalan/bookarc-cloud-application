@@ -1,9 +1,3 @@
-"""
-Lambda Function: bookarc-adminApproveAuthorVerification
-Approve author verification requests with EMBEDDED notifications
-Endpoint: POST /admin/verification-requests/{request_id}/approve
-"""
-
 import json
 import pymysql
 import os
