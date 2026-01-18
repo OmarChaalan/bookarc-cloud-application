@@ -62,7 +62,7 @@ def lambda_handler(event, context):
     
     try:
         # Debug: Print the entire event
-        print(f"🔍 DEBUG: Incoming event: {json.dumps(event)}")
+        print(f"DEBUG: Incoming event: {json.dumps(event)}")
         
         # Get authenticated user from authorizer
         follower_cognito_sub = None
@@ -71,8 +71,8 @@ def lambda_handler(event, context):
             request_context = event.get('requestContext', {})
             authorizer = request_context.get('authorizer', {})
             
-            print(f"🔍 DEBUG: Full request context keys: {list(request_context.keys())}")
-            print(f"🔍 DEBUG: Authorizer keys: {list(authorizer.keys())}")
+            print(f"DEBUG: Full request context keys: {list(request_context.keys())}")
+            print(f"DEBUG: Authorizer keys: {list(authorizer.keys())}")
             
             # Try multiple possible locations for the user identity
             if 'claims' in authorizer and 'sub' in authorizer['claims']:
@@ -124,7 +124,7 @@ def lambda_handler(event, context):
         
         following_id = path_params['user_id']
         
-        print(f"Checking if {follower_cognito_sub} is following user {following_id}")
+        print(f"🔍 Checking if {follower_cognito_sub} is following user {following_id}")
         
         conn = get_db_connection()
         
