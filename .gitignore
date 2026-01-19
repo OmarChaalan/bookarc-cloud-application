@@ -1,0 +1,17 @@
+node_modules/
+frontend/BookArc/node_modules/
+
+# Environment variables
+.env
+frontend/BookArc/.env
+
+# Build outputs
+build/
+frontend/BookArc/build/
+
+# Terraform
+**/.terraform/*
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
