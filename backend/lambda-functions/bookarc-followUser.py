@@ -1,10 +1,60 @@
+"""
+Lambda Function: bookarc-followUser
+Follow/Unfollow a user (including users who are authors) with EMBEDDED notifications
+Endpoint: POST /users/{user_id}/follow
+Uses display_name in notifications
+"""
+
 import json
 import pymysql
 import os
 from datetime import datetime
-from notification_service import NotificationService
+from typing import Optional
 
-# RDS Configuration - UPDATED variable names
+# ============================================================================
+# EMBEDDED NOTIFICATION SERVICE - NO LAYER NEEDED
+# ============================================================================
+
+class NotificationService:
+    """Service for creating and managing notifications"""
+    
+    def __init__(self, connection):
+        self.connection = connection
+    
+    def create_notification(
+        self, 
+        user_id: int, 
+        message: str, 
+        notification_type: str,
+        audience_type: str = 'all'
+    ) -> Optional[int]:
+        """Create a single notification"""
+        try:
+            with self.connection.cursor() as cursor:
+                sql = """
+                    INSERT INTO notifications 
+                    (user_id, message, type, audience_type, is_read, created_at)
+                    VALUES (%s, %s, %s, %s, FALSE, NOW())
+                """
+                cursor.execute(sql, (user_id, message, notification_type, audience_type))
+                self.connection.commit()
+                notification_id = cursor.lastrowid
+                print(f"Created notification {notification_id} for user {user_id}: {message}")
+                return notification_id
+        except Exception as e:
+            print(f"Error creating notification: {str(e)}")
+            return None
+    
+    def notify_user_new_follower(self, user_id: int, follower_name: str) -> Optional[int]:
+        """Notify user of a new follower"""
+        message = f'👥 {follower_name} is now following you!'
+        return self.create_notification(user_id, message, 'new_follower', 'all')
+
+# ============================================================================
+# END OF EMBEDDED NOTIFICATION SERVICE
+# ============================================================================
+
+# RDS Configuration
 DB_HOST = os.environ.get('DB_HOST')
 DB_USER = os.environ.get('DB_USER')
 DB_PASSWORD = os.environ.get('DB_PASSWORD')
@@ -13,7 +63,7 @@ DB_NAME = os.environ.get('DB_NAME')
 def get_db_connection():
     """Create database connection with error handling"""
     try:
-        print(f"🔍 Attempting DB connection to {DB_HOST}")
+        print(f"Attempting DB connection to {DB_HOST}")
         connection = pymysql.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -22,10 +72,10 @@ def get_db_connection():
             connect_timeout=5,
             cursorclass=pymysql.cursors.DictCursor
         )
-        print("✅ Database connection successful")
+        print("Database connection successful")
         return connection
     except Exception as e:
-        print(f"❌ Database connection failed: {str(e)}")
+        print(f"Database connection failed: {str(e)}")
         raise
 
 def lambda_handler(event, context):
@@ -34,6 +84,10 @@ def lambda_handler(event, context):
     POST /users/{user_id}/follow
     Body: { "action": "follow" | "unfollow" }
     """
+    
+    print("\n" + "="*80)
+    print("🎬 ===== LAMBDA START: bookarc-followUser =====")
+    print("="*80 + "\n")
     
     # CORS headers for all responses
     cors_headers = {
@@ -53,7 +107,7 @@ def lambda_handler(event, context):
     
     # Validate environment variables
     if not all([DB_HOST, DB_USER, DB_PASSWORD, DB_NAME]):
-        print("❌ Missing database environment variables")
+        print("Missing database environment variables")
         return {
             'statusCode': 500,
             'headers': cors_headers,
@@ -65,60 +119,48 @@ def lambda_handler(event, context):
     
     try:
         # Debug: Print the entire event to CloudWatch
-        print(f"🔍 DEBUG: Incoming event: {json.dumps(event)}")
+        print(f"Incoming event:\n{json.dumps(event, indent=2)}\n")
         
-        # Get authenticated user from authorizer - FIXED VERSION
+        # Get authenticated user from authorizer
         follower_cognito_sub = None
         
         try:
             request_context = event.get('requestContext', {})
             authorizer = request_context.get('authorizer', {})
             
-            print(f"🔍 DEBUG: Full request context keys: {list(request_context.keys())}")
-            print(f"🔍 DEBUG: Authorizer keys: {list(authorizer.keys())}")
+            print(f"Request context keys: {list(request_context.keys())}")
+            print(f"Authorizer keys: {list(authorizer.keys())}")
             
             # Try multiple possible locations for the user identity
             if 'claims' in authorizer and 'sub' in authorizer['claims']:
                 follower_cognito_sub = authorizer['claims']['sub']
-                print(f"✅ Found user in claims: {follower_cognito_sub}")
+                print(f"Found user in claims: {follower_cognito_sub}")
             elif 'jwt' in authorizer and 'claims' in authorizer['jwt'] and 'sub' in authorizer['jwt']['claims']:
                 follower_cognito_sub = authorizer['jwt']['claims']['sub']
-                print(f"✅ Found user in JWT: {follower_cognito_sub}")
+                print(f"Found user in JWT: {follower_cognito_sub}")
             elif 'sub' in authorizer:
                 follower_cognito_sub = authorizer['sub']
-                print(f"✅ Found user in authorizer.sub: {follower_cognito_sub}")
-            # Some configurations store it directly in requestContext
-            elif 'identity' in request_context and 'cognitoAuthenticationProvider' in request_context['identity']:
-                # Extract from Cognito authentication provider string
-                auth_provider = request_context['identity']['cognitoAuthenticationProvider']
-                # Format: cognito-idp.region.amazonaws.com/userPoolId,cognito-idp.region.amazonaws.com/userPoolId:CognitoSignIn:sub
-                if ':CognitoSignIn:' in auth_provider:
-                    follower_cognito_sub = auth_provider.split(':CognitoSignIn:')[-1]
-                    print(f"✅ Found user in cognitoAuthenticationProvider: {follower_cognito_sub}")
+                print(f"Found user in authorizer.sub: {follower_cognito_sub}")
             
             if not follower_cognito_sub:
-                print(f"❌ Could not find sub in any expected location")
-                print(f"Available authorizer keys: {list(authorizer.keys())}")
-                if authorizer:
-                    print(f"Authorizer content sample: {str(authorizer)[:200]}")
+                print(f"Could not find sub in any expected location")
                 raise KeyError("Could not find user sub in authorizer")
                 
         except Exception as e:
-            print(f"❌ Error extracting user from authorizer: {str(e)}")
+            print(f"Error extracting user from authorizer: {str(e)}")
             return {
                 'statusCode': 401,
                 'headers': cors_headers,
                 'body': json.dumps({
                     'error': 'Unauthorized',
-                    'message': 'Could not identify authenticated user',
-                    'details': str(e)
+                    'message': 'Could not identify authenticated user'
                 })
             }
         
         # Get target user ID from path
         path_params = event.get('pathParameters', {})
         if not path_params or 'user_id' not in path_params:
-            print("❌ Missing user_id in path parameters")
+            print("Missing user_id in path parameters")
             return {
                 'statusCode': 400,
                 'headers': cors_headers,
@@ -134,7 +176,10 @@ def lambda_handler(event, context):
         body = json.loads(event.get('body', '{}'))
         action = body.get('action', 'follow')
         
-        print(f"🔍 Action: {action}, Follower (Cognito): {follower_cognito_sub}, Following: {following_id}")
+        print(f"\nAction Details:")
+        print(f"   Action: {action}")
+        print(f"   Follower (Cognito): {follower_cognito_sub}")
+        print(f"   Target User ID: {following_id}\n")
         
         if action not in ['follow', 'unfollow']:
             return {
@@ -150,31 +195,39 @@ def lambda_handler(event, context):
         
         try:
             with conn.cursor() as cursor:
-                # Get follower's database user_id
-                print(f"🔍 Looking up user with cognito_sub: {follower_cognito_sub}")
+                # Get follower's database user_id and display_name
+                print(f"Looking up user with cognito_sub: {follower_cognito_sub}")
                 cursor.execute(
-                    "SELECT user_id, role FROM users WHERE cognito_sub = %s",
+                    """
+                    SELECT user_id, username, role, 
+                           COALESCE(display_name, username) as display_name
+                    FROM users 
+                    WHERE cognito_sub = %s
+                    """,
                     (follower_cognito_sub,)
                 )
                 follower_result = cursor.fetchone()
                 
                 if not follower_result:
-                    print(f"❌ Follower not found for cognito_sub: {follower_cognito_sub}")
+                    print(f"Follower not found")
                     return {
                         'statusCode': 404,
                         'headers': cors_headers,
                         'body': json.dumps({
                             'error': 'User not found',
-                            'message': 'Your user account was not found in the database'
+                            'message': 'Your user account was not found'
                         })
                     }
                 
                 follower_db_id = follower_result['user_id']
+                follower_username = follower_result['username']
+                follower_display_name = follower_result['display_name']
                 follower_role = follower_result['role']
-                print(f"✅ Follower DB ID: {follower_db_id}, Role: {follower_role}")
+                print(f"Follower: user_id={follower_db_id}, username={follower_username}, display_name={follower_display_name}, role={follower_role}")
                 
-                # ✅ FIXED: Only prevent admins from following, allow authors
+                # Only prevent admins from following
                 if follower_role == 'admin':
+                    print(f"Admin cannot follow users")
                     return {
                         'statusCode': 403,
                         'headers': cors_headers,
@@ -185,15 +238,15 @@ def lambda_handler(event, context):
                     }
                 
                 # Validate target user exists and is active
-                print(f"🔍 Checking if target user {following_id} exists")
+                print(f"Checking target user {following_id}")
                 cursor.execute(
-                    "SELECT user_id, username, is_active FROM users WHERE user_id = %s",
+                    "SELECT user_id, username, is_active, role FROM users WHERE user_id = %s",
                     (following_id,)
                 )
                 following_result = cursor.fetchone()
                 
                 if not following_result:
-                    print(f"❌ Target user not found: {following_id}")
+                    print(f"Target user not found")
                     return {
                         'statusCode': 404,
                         'headers': cors_headers,
@@ -204,7 +257,7 @@ def lambda_handler(event, context):
                     }
                 
                 if not following_result['is_active']:
-                    print(f"❌ Target user is not active: {following_id}")
+                    print(f"Target user is not active")
                     return {
                         'statusCode': 404,
                         'headers': cors_headers,
@@ -215,10 +268,12 @@ def lambda_handler(event, context):
                     }
                 
                 target_username = following_result['username']
-                print(f"✅ Target user found: {following_id} ({target_username})")
+                target_role = following_result['role']
+                print(f"Target user: user_id={following_id}, username={target_username}, role={target_role}")
                 
                 # Prevent self-follow
                 if str(follower_db_id) == str(following_id):
+                    print(f"Cannot follow yourself")
                     return {
                         'statusCode': 400,
                         'headers': cors_headers,
@@ -230,7 +285,7 @@ def lambda_handler(event, context):
                 
                 if action == 'follow':
                     # Check if already following
-                    print(f"🔍 Checking if already following")
+                    print(f"Checking if already following")
                     cursor.execute(
                         """
                         SELECT * FROM user_follow_user 
@@ -240,7 +295,7 @@ def lambda_handler(event, context):
                     )
                     
                     if cursor.fetchone():
-                        print(f"⚠️ Already following")
+                        print(f"Already following")
                         return {
                             'statusCode': 400,
                             'headers': cors_headers,
@@ -251,7 +306,7 @@ def lambda_handler(event, context):
                         }
                     
                     # Create follow relationship
-                    print(f"🔍 Creating follow relationship")
+                    print(f"Creating follow relationship")
                     cursor.execute(
                         """
                         INSERT INTO user_follow_user (follower_id, following_id, followed_at)
@@ -261,13 +316,35 @@ def lambda_handler(event, context):
                     )
                     
                     conn.commit()
+                    print(f"Database updated - follow relationship created")
                     
-                    print(f"✅ Successfully followed: {follower_db_id} -> {following_id}")
+                    # SEND NOTIFICATION
+                    print(f"\n{'='*60}")
+                    print(f"NOTIFICATION PROCESS START")
+                    print(f"{'='*60}")
                     
-                    # 🔔 CREATE NOTIFICATION
-                    notif_service = NotificationService(conn)
-                    follower_name = notif_service.get_user_display_name(follower_db_id)
-                    notif_service.notify_user_new_follower(int(following_id), follower_name)
+                    try:
+                        notif_service = NotificationService(conn)
+                        print(f"📧 Creating notification for user {following_id}")
+                        print(f"   Message: '{follower_display_name} is now following you!'")
+                        
+                        notif_id = notif_service.notify_user_new_follower(
+                            int(following_id), 
+                            follower_display_name 
+                        )
+                        
+                        if notif_id:
+                            print(f"Notification created successfully: ID {notif_id}")
+                        else:
+                            print(f"Notification was not created (returned None)")
+                        
+                    except Exception as notif_error:
+                        print(f"Notification error: {str(notif_error)}")
+                        import traceback
+                        traceback.print_exc()
+                        # Don't fail the request if notification fails
+                    
+                    print(f"{'='*60}\n")
                     
                     return {
                         'statusCode': 200,
@@ -281,7 +358,7 @@ def lambda_handler(event, context):
                 
                 else:  # unfollow
                     # Delete follow relationship
-                    print(f"🔍 Removing follow relationship")
+                    print(f"Removing follow relationship")
                     cursor.execute(
                         """
                         DELETE FROM user_follow_user 
@@ -302,8 +379,7 @@ def lambda_handler(event, context):
                         }
                     
                     conn.commit()
-                    
-                    print(f"✅ Successfully unfollowed: {follower_db_id} -> {following_id}")
+                    print(f"✅ Successfully unfollowed")
                     
                     return {
                         'statusCode': 200,
@@ -317,10 +393,10 @@ def lambda_handler(event, context):
         
         finally:
             conn.close()
-            print("✅ Database connection closed")
+            print("Database connection closed")
     
     except json.JSONDecodeError as e:
-        print(f"❌ JSON Error: {str(e)}")
+        print(f"JSON Error: {str(e)}")
         return {
             'statusCode': 400,
             'headers': cors_headers,
@@ -331,7 +407,9 @@ def lambda_handler(event, context):
         }
     
     except pymysql.Error as e:
-        print(f"❌ Database error: {str(e)}")
+        print(f"Database error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             'statusCode': 500,
             'headers': cors_headers,
@@ -342,7 +420,7 @@ def lambda_handler(event, context):
         }
     
     except Exception as e:
-        print(f"❌ ERROR: {str(e)}")
+        print(f"ERROR: {str(e)}")
         import traceback
         print(traceback.format_exc())
         
@@ -354,3 +432,8 @@ def lambda_handler(event, context):
                 'message': str(e)
             })
         }
+    
+    finally:
+        print("\n" + "="*80)
+        print("🏁 ===== LAMBDA END =====")
+        print("="*80 + "\n")
