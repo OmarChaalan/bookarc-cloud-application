@@ -26,7 +26,7 @@ def decimal_to_float(obj):
 
 def get_db_connection():
     """Create database connection"""
-    print(f"📊 Connecting to database: {DB_HOST}/{DB_NAME}")
+    print(f"Connecting to database: {DB_HOST}/{DB_NAME}")
     return pymysql.connect(
         host=DB_HOST,
         user=DB_USER,
@@ -52,10 +52,10 @@ def get_user_reading_history(conn, user_id):
             """
             cursor.execute(sql, (user_id, user_id, user_id))
             result = [row['book_id'] for row in cursor.fetchall()]
-            print(f"📚 User has {len(result)} books in reading history")
+            print(f"User has {len(result)} books in reading history")
             return result
     except Exception as e:
-        print(f"⚠️ Error getting reading history: {str(e)}")
+        print(f"Error getting reading history: {str(e)}")
         return []
 
 def get_user_favorite_genres(conn, user_id):
@@ -70,10 +70,10 @@ def get_user_favorite_genres(conn, user_id):
             """
             cursor.execute(sql, (user_id,))
             result = cursor.fetchall()
-            print(f"⭐ User has {len(result)} favorite genres: {[g['genre_name'] for g in result]}")
+            print(f"User has {len(result)} favorite genres: {[g['genre_name'] for g in result]}")
             return result
     except Exception as e:
-        print(f"⚠️ Error getting favorite genres: {str(e)}")
+        print(f"Error getting favorite genres: {str(e)}")
         import traceback
         traceback.print_exc()
         return []
@@ -162,11 +162,11 @@ def get_recommendations_simple(conn, user_id, favorite_genres, exclude_books, li
                     params.extend(exclude_books)
                 params.append(limit)
             
-            print(f"🔍 Executing SQL query...")
+            print(f"Executing SQL query...")
             cursor.execute(sql, params)
             results = cursor.fetchall()
             
-            print(f"✅ Found {len(results)} recommendations")
+            print(f"Found {len(results)} recommendations")
             
             # Convert all numeric fields to proper types
             for book in results:
@@ -178,7 +178,7 @@ def get_recommendations_simple(conn, user_id, favorite_genres, exclude_books, li
             return results
             
     except Exception as e:
-        print(f"❌ Error getting recommendations: {str(e)}")
+        print(f"Error getting recommendations: {str(e)}")
         import traceback
         traceback.print_exc()
         return []
@@ -187,15 +187,15 @@ def lambda_handler(event, context):
     """Generate personalized book recommendations"""
     
     print("=" * 60)
-    print("🚀 RECOMMENDATIONS LAMBDA STARTED")
-    print(f"📅 Timestamp: {datetime.datetime.now()}")
+    print("RECOMMENDATIONS LAMBDA STARTED")
+    print(f"Timestamp: {datetime.datetime.now()}")
     print("=" * 60)
     
     try:
         # Verify environment variables
-        print(f"🔧 DB_HOST: {DB_HOST}")
-        print(f"🔧 DB_NAME: {DB_NAME}")
-        print(f"🔧 DB_USER: {DB_USER}")
+        print(f"DB_HOST: {DB_HOST}")
+        print(f"DB_NAME: {DB_NAME}")
+        print(f"DB_USER: {DB_USER}")
         
         if not all([DB_HOST, DB_NAME, DB_USER, DB_PASSWORD]):
             raise Exception("Missing required environment variables")
@@ -203,9 +203,9 @@ def lambda_handler(event, context):
         # Get user ID from Cognito token
         try:
             cognito_sub = event['requestContext']['authorizer']['claims']['sub']
-            print(f"👤 Cognito Sub: {cognito_sub}")
+            print(f"Cognito Sub: {cognito_sub}")
         except KeyError as e:
-            print(f"❌ Missing Cognito authorization: {str(e)}")
+            print(f"Missing Cognito authorization: {str(e)}")
             return {
                 'statusCode': 401,
                 'headers': {
@@ -216,18 +216,18 @@ def lambda_handler(event, context):
             }
         
         # Connect to database
-        print("🔌 Connecting to database...")
+        print("Connecting to database...")
         conn = get_db_connection()
-        print("✅ Database connected successfully")
+        print("Database connected successfully")
         
         try:
             # Get database user_id from cognito_sub
-            print("🔍 Looking up user in database...")
+            print("Looking up user in database...")
             with conn.cursor() as cursor:
                 cursor.execute("SELECT user_id, username, role FROM users WHERE cognito_sub = %s", (cognito_sub,))
                 user_row = cursor.fetchone()
                 if not user_row:
-                    print("❌ User not found in database")
+                    print("User not found in database")
                     return {
                         'statusCode': 404,
                         'headers': {
@@ -237,29 +237,29 @@ def lambda_handler(event, context):
                         'body': json.dumps({'error': 'User not found'})
                     }
                 db_user_id = user_row['user_id']
-                print(f"✅ Found user: {user_row['username']} (ID: {db_user_id}, Role: {user_row['role']})")
+                print(f"Found user: {user_row['username']} (ID: {db_user_id}, Role: {user_row['role']})")
         
             # Get query parameters
             params = event.get('queryStringParameters') or {}
             num_results = min(int(params.get('num_results', 10)), 50)
-            print(f"🎯 Requesting {num_results} recommendations")
+            print(f"Requesting {num_results} recommendations")
             
             # Get user's reading history
-            print("📚 Fetching reading history...")
+            print("Fetching reading history...")
             exclude_books = get_user_reading_history(conn, db_user_id)
             
             # Get user's favorite genres
-            print("⭐ Fetching favorite genres...")
+            print("Fetching favorite genres...")
             favorite_genres = get_user_favorite_genres(conn, db_user_id)
             
             # Get recommendations
-            print("🎲 Generating recommendations...")
+            print("Generating recommendations...")
             recommendations = get_recommendations_simple(
                 conn, db_user_id, favorite_genres, exclude_books, num_results
             )
             
             if not recommendations:
-                print("⚠️ No recommendations found, trying fallback...")
+                print("No recommendations found, trying fallback...")
                 # Fallback: Just get any highly rated books
                 with conn.cursor() as cursor:
                     sql = """
@@ -291,7 +291,7 @@ def lambda_handler(event, context):
                         if book.get('average_rating') is not None:
                             book['average_rating'] = float(book['average_rating'])
             
-            print(f"✅ Returning {len(recommendations)} recommendations")
+            print(f"Returning {len(recommendations)} recommendations")
             print("=" * 60)
             
             response_body = {
@@ -312,11 +312,11 @@ def lambda_handler(event, context):
             
         finally:
             conn.close()
-            print("🔒 Database connection closed")
+            print("Database connection closed")
         
     except Exception as e:
         print("=" * 60)
-        print(f"❌ FATAL ERROR OCCURRED")
+        print(f"FATAL ERROR OCCURRED")
         print(f"Error Type: {type(e).__name__}")
         print(f"Error Message: {str(e)}")
         print("=" * 60)
