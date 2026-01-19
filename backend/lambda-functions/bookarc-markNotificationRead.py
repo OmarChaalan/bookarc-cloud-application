@@ -4,19 +4,24 @@ import os
 
 def lambda_handler(event, context):
     """
-    PATCH /notifications/{notification_id}/read
-    Mark a notification as read
+    PATCH /notifications/mark-all-read
+    Mark all notifications as read for current user
     """
     
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Allow-Methods': 'PATCH,OPTIONS',
+        'Access-Control-Allow-Methods': 'OPTIONS,PATCH',  # Fixed order
         'Content-Type': 'application/json'
     }
     
-    if event['httpMethod'] == 'OPTIONS':
-        return {'statusCode': 200, 'headers': headers, 'body': ''}
+    # Handle OPTIONS preflight request
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps({})
+        }
     
     try:
         # Get user from JWT token
@@ -29,9 +34,6 @@ def lambda_handler(event, context):
                 'headers': headers,
                 'body': json.dumps({'error': 'Unauthorized'})
             }
-        
-        # Get notification_id from path
-        notification_id = event['pathParameters']['notification_id']
         
         # Connect to database
         conn = pymysql.connect(
@@ -61,38 +63,22 @@ def lambda_handler(event, context):
                 
                 user_id = user['user_id']
                 
-                # Check if notification exists and belongs to user
-                cursor.execute("""
-                    SELECT notification_id, is_read 
-                    FROM notifications 
-                    WHERE notification_id = %s AND user_id = %s
-                """, (notification_id, user_id))
-                
-                notification = cursor.fetchone()
-                
-                if not notification:
-                    return {
-                        'statusCode': 404,
-                        'headers': headers,
-                        'body': json.dumps({'error': 'Notification not found'})
-                    }
-                
-                # Mark as read
+                # Mark all as read
                 cursor.execute("""
                     UPDATE notifications 
                     SET is_read = TRUE 
-                    WHERE notification_id = %s
-                """, (notification_id,))
+                    WHERE user_id = %s AND is_read = FALSE
+                """, (user_id,))
                 
+                updated_count = cursor.rowcount
                 conn.commit()
                 
                 return {
                     'statusCode': 200,
                     'headers': headers,
                     'body': json.dumps({
-                        'message': 'Notification marked as read',
-                        'notification_id': int(notification_id),
-                        'is_read': True
+                        'message': 'All notifications marked as read',
+                        'updated_count': updated_count
                     })
                 }
                 
