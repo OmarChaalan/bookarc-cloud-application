@@ -1,0 +1,81 @@
+name: Provision and Deploy All Lambdas
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/lambda-functions/**'
+
+env:
+  AWS_REGION: us-east-1
+  LAYER_ARN: arn:aws:lambda:us-east-1:355539295617:layer:bookarc-pymysql-layer:2
+  ROLE_ARN: arn:aws:iam::355539295617:role/LabRole
+  VPC_SUBNET_1: subnet-0933ca063bf850b4b
+  VPC_SUBNET_2: subnet-05052444ccb5edbab
+  SECURITY_GROUP: sg-009d0ef900f1cadb7
+  DB_HOST: bookarc-prod-mysql.c8s3ubmkbcoa.us-east-1.rds.amazonaws.com
+  DB_USER: admin
+  DB_NAME: bookarcdb
+
+jobs:
+  provision-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Provision and Deploy All Lambda Functions
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          cd backend/lambda-functions
+          
+          for file in *.py; do
+            function_name="${file%.py}"
+            
+            echo "Processing $function_name..."
+            
+            mkdir -p "temp_$function_name"
+            cp "$file" "temp_$function_name/lambda_function.py"
+            cd "temp_$function_name"
+            zip -q function.zip lambda_function.py
+            
+            aws lambda create-function \
+              --function-name "$function_name" \
+              --runtime python3.14 \
+              --role $ROLE_ARN \
+              --handler lambda_function.lambda_handler \
+              --zip-file fileb://function.zip \
+              --timeout 30 \
+              --memory-size 256 \
+              --vpc-config SubnetIds=$VPC_SUBNET_1,$VPC_SUBNET_2,SecurityGroupIds=$SECURITY_GROUP \
+              --environment "Variables={DB_HOST=$DB_HOST,DB_USER=$DB_USER,DB_PASSWORD=$DB_PASSWORD,DB_NAME=$DB_NAME}" \
+              --layers $LAYER_ARN \
+              --region $AWS_REGION 2>/dev/null && echo "✓ Created $function_name" || echo "Function exists, updating..."
+            
+            aws lambda update-function-code \
+              --function-name "$function_name" \
+              --zip-file fileb://function.zip \
+              --region $AWS_REGION
+            
+            aws lambda update-function-configuration \
+              --function-name "$function_name" \
+              --environment "Variables={DB_HOST=$DB_HOST,DB_USER=$DB_USER,DB_PASSWORD=$DB_PASSWORD,DB_NAME=$DB_NAME}" \
+              --vpc-config SubnetIds=$VPC_SUBNET_1,$VPC_SUBNET_2,SecurityGroupIds=$SECURITY_GROUP \
+              --layers $LAYER_ARN \
+              --region $AWS_REGION
+            
+            cd ..
+            rm -rf "temp_$function_name"
+            
+            echo "✓ Deployed $function_name"
+            echo "---"
+          done
