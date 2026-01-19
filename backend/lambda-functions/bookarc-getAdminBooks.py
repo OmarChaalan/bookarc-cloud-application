@@ -56,7 +56,7 @@ def lambda_handler(event, context):
         claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
         cognito_sub = claims.get('sub')
         
-        print(f"🔍 DEBUG: cognito_sub: {cognito_sub}")
+        print(f"DEBUG: cognito_sub: {cognito_sub}")
         
         if not cognito_sub:
             return cors_response(401, {'error': 'Unauthorized - No user identity'})
@@ -83,10 +83,10 @@ def lambda_handler(event, context):
             with connection.cursor() as cursor:
                 # Check if user is admin
                 if not check_admin_role(cognito_sub, cursor):
-                    print(f"❌ User {cognito_sub} is not admin")
+                    print(f"User {cognito_sub} is not admin")
                     return cors_response(403, {'error': 'Forbidden - Admin access required'})
                 
-                print(f"✅ User {cognito_sub} is admin")
+                print(f"User {cognito_sub} is admin")
                 
                 # Simpler approach: Get books first, then get authors/genres separately
                 base_query = """
@@ -117,7 +117,7 @@ def lambda_handler(event, context):
                 cursor.execute(count_query, query_params)
                 total = cursor.fetchone()['total']
                 
-                print(f"📊 Total books found: {total}")
+                print(f"Total books found: {total}")
                 
                 # Get paginated books
                 query_params_with_limit = query_params + [limit, offset]
@@ -128,7 +128,7 @@ def lambda_handler(event, context):
                 
                 books = cursor.fetchall()
                 
-                print(f"📚 Retrieved {len(books)} books for current page")
+                print(f"Retrieved {len(books)} books for current page")
                 
                 # For each book, get authors and genres
                 for book in books:
@@ -169,7 +169,7 @@ def lambda_handler(event, context):
                     'totalPages': (total + limit - 1) // limit if total > 0 else 1
                 }
                 
-                print(f"✅ Returning result: {len(books)} books, total: {total}, pages: {result['totalPages']}")
+                print(f"Returning result: {len(books)} books, total: {total}, pages: {result['totalPages']}")
                 
                 return cors_response(200, result)
                 
@@ -177,7 +177,7 @@ def lambda_handler(event, context):
             connection.close()
         
     except Exception as e:
-        print(f"❌ Error getting admin books: {str(e)}")
+        print(f"Error getting admin books: {str(e)}")
         import traceback
         traceback.print_exc()
         return cors_response(500, {
