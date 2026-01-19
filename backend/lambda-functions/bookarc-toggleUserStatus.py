@@ -87,7 +87,7 @@ def lambda_handler(event, context):
                 admin_user_id, is_admin = check_admin_role(cognito_sub, cursor)
                 
                 if not is_admin:
-                    print(f"❌ User {cognito_sub} is not admin")
+                    print(f"User {cognito_sub} is not admin")
                     return cors_response(403, {'error': 'Forbidden - Admin access required'})
                 
                 # Check if target user exists
@@ -152,7 +152,7 @@ def lambda_handler(event, context):
                 # Ensure is_active is boolean
                 updated_user['is_active'] = bool(updated_user['is_active'])
                 
-                print(f"✅ User {user_id} successfully {action}d by admin {admin_user_id}")
+                print(f"User {user_id} successfully {action}d by admin {admin_user_id}")
                 
                 return cors_response(200, {
                     'message': f'User successfully {action}d',
@@ -163,7 +163,7 @@ def lambda_handler(event, context):
             connection.close()
         
     except Exception as e:
-        print(f"❌ Error toggling user status: {str(e)}")
+        print(f"Error toggling user status: {str(e)}")
         import traceback
         traceback.print_exc()
         return cors_response(500, {
