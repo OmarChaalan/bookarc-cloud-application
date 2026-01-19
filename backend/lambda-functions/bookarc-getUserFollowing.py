@@ -7,8 +7,8 @@ def lambda_handler(event, context):
     """
     Get list of users AND authors that a specific user is following
     GET /users/{user_id}/following
-    ✅ PUBLIC ACCESS - No authentication required
-    ✅ UPDATED: Now returns both users AND authors
+    PUBLIC ACCESS - No authentication required
+    UPDATED: Now returns both users AND authors
     """
     
     # Enable CORS
@@ -76,7 +76,7 @@ def lambda_handler(event, context):
                         'body': json.dumps({'message': 'User not found'})
                     }
                 
-                # ✅ QUERY 1: Get USERS that this user is following
+                # QUERY 1: Get USERS that this user is following
                 user_query = """
                 SELECT 
                     u.user_id as id,
@@ -99,9 +99,9 @@ def lambda_handler(event, context):
                 print(f"🔍 Executing query for user {user_id}'s following (USERS)")
                 cursor.execute(user_query, (user_id,))
                 following_users = cursor.fetchall()
-                print(f"✅ Found {len(following_users)} USERS that user {user_id} is following")
+                print(f"Found {len(following_users)} USERS that user {user_id} is following")
                 
-                # ✅ QUERY 2: Get AUTHORS that this user is following
+                # QUERY 2: Get AUTHORS that this user is following
                 author_query = """
                 SELECT 
                     a.author_id,
@@ -134,12 +134,12 @@ def lambda_handler(event, context):
                 WHERE ufa.user_id = %s
                 """
                 
-                print(f"🔍 Executing query for user {user_id}'s following (AUTHORS)")
+                print(f"Executing query for user {user_id}'s following (AUTHORS)")
                 cursor.execute(author_query, (user_id,))
                 following_authors = cursor.fetchall()
-                print(f"✅ Found {len(following_authors)} AUTHORS that user {user_id} is following")
+                print(f"Found {len(following_authors)} AUTHORS that user {user_id} is following")
                 
-                # ✅ Format the response - USERS
+                # Format the response - USERS
                 formatted_following = []
                 
                 for user in following_users:
@@ -151,25 +151,25 @@ def lambda_handler(event, context):
                         'bio': str(user['bio']),
                         'isPrivate': not bool(user['is_public']),
                         'followedAt': user['followedAt'].isoformat() if user['followedAt'] else '',
-                        'type': 'user',  # ✅ Mark as user
+                        'type': 'user',  # 
                         'stats': {
                             'totalReviews': int(user['totalReviews'] or 0),
                             'booksRead': int(user['booksRead'] or 0)
                         }
                     })
                 
-                # ✅ Format the response - AUTHORS
+                # Format the response - AUTHORS
                 for author in following_authors:
                     formatted_following.append({
                         'id': int(author['linked_user_id']) if author['linked_user_id'] else int(author['author_id']),
-                        'authorId': int(author['author_id']),  # ✅ Include author_id
+                        'authorId': int(author['author_id']), 
                         'username': str(author['username']),
-                        'role': 'author',  # ✅ Mark as author
+                        'role': 'author',  
                         'avatarUrl': str(author['avatarUrl']),
                         'bio': str(author['bio']),
                         'isPrivate': not bool(author['is_public']),
                         'followedAt': author['followedAt'].isoformat() if author['followedAt'] else '',
-                        'type': 'author',  # ✅ Mark as author
+                        'type': 'author', 
                         'authorType': 'registered' if author['is_registered_author'] else 'external',
                         'verified': bool(author['verified']),
                         'stats': {
@@ -178,10 +178,10 @@ def lambda_handler(event, context):
                         }
                     })
                 
-                # ✅ Sort by followedAt (most recent first)
+                # Sort by followedAt (most recent first)
                 formatted_following.sort(key=lambda x: x['followedAt'], reverse=True)
                 
-                print(f"✅ Total following (users + authors): {len(formatted_following)}")
+                print(f"Total following (users + authors): {len(formatted_following)}")
                 
                 return {
                     'statusCode': 200,
@@ -194,10 +194,10 @@ def lambda_handler(event, context):
                 
         finally:
             connection.close()
-            print("✅ Database connection closed")
+            print("Database connection closed")
             
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"Error: {str(e)}")
         import traceback
         print(traceback.format_exc())
         
