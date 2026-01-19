@@ -11,7 +11,7 @@ DB_NAME = os.environ.get('DB_NAME', 'bookarcdb')
 
 def get_db_connection():
     """Create database connection"""
-    print(f"📊 Connecting to database: {DB_HOST}/{DB_NAME}")
+    print(f"Connecting to database: {DB_HOST}/{DB_NAME}")
     return pymysql.connect(
         host=DB_HOST,
         user=DB_USER,
@@ -25,7 +25,7 @@ def get_user_id_from_token(event):
     try:
         claims = event['requestContext']['authorizer']['claims']
         cognito_sub = claims['sub']
-        print(f"🔐 Cognito Sub: {cognito_sub}")
+        print(f"Cognito Sub: {cognito_sub}")
         
         conn = get_db_connection()
         try:
@@ -36,14 +36,14 @@ def get_user_id_from_token(event):
                 )
                 result = cursor.fetchone()
                 if result:
-                    print(f"✅ Found user_id: {result['user_id']}")
+                    print(f"Found user_id: {result['user_id']}")
                     return result['user_id']
-                print("❌ No user found for cognito_sub")
+                print("No user found for cognito_sub")
                 return None
         finally:
             conn.close()
     except Exception as e:
-        print(f"❌ Error extracting user_id: {str(e)}")
+        print(f"Error extracting user_id: {str(e)}")
         return None
 
 def lambda_handler(event, context):
@@ -57,7 +57,7 @@ def lambda_handler(event, context):
     }
     """
     
-    print("📥 Received event:", json.dumps(event))
+    print("Received event:", json.dumps(event))
     
     # CORS headers
     headers = {
@@ -69,7 +69,7 @@ def lambda_handler(event, context):
     
     # Handle OPTIONS request
     if event.get('httpMethod') == 'OPTIONS':
-        print("✅ OPTIONS request - returning CORS headers")
+        print("OPTIONS request - returning CORS headers")
         return {
             'statusCode': 200,
             'headers': headers,
@@ -80,7 +80,7 @@ def lambda_handler(event, context):
         # Get user_id from token
         user_id = get_user_id_from_token(event)
         if not user_id:
-            print("❌ Unauthorized - no user_id found")
+            print("Unauthorized - no user_id found")
             return {
                 'statusCode': 401,
                 'headers': headers,
@@ -89,16 +89,16 @@ def lambda_handler(event, context):
         
         # Parse request body
         body = json.loads(event.get('body', '{}'))
-        print(f"📝 Request body: {body}")
+        print(f"Request body: {body}")
         
         list_name = body.get('name', '').strip()
         visibility = body.get('visibility', 'private').lower()
         
-        print(f"📋 List name: '{list_name}', visibility: '{visibility}'")
+        print(f"List name: '{list_name}', visibility: '{visibility}'")
         
         # Validation
         if not list_name:
-            print("❌ Validation failed - list name is empty")
+            print("Validation failed - list name is empty")
             return {
                 'statusCode': 400,
                 'headers': headers,
@@ -106,7 +106,7 @@ def lambda_handler(event, context):
             }
         
         if len(list_name) > 255:
-            print("❌ Validation failed - list name too long")
+            print("Validation failed - list name too long")
             return {
                 'statusCode': 400,
                 'headers': headers,
@@ -115,13 +115,13 @@ def lambda_handler(event, context):
         
         if visibility not in ['public', 'private']:
             visibility = 'private'
-            print(f"⚠️ Invalid visibility, defaulting to 'private'")
+            print(f"Invalid visibility, defaulting to 'private'")
         
         # Create list in database
         conn = get_db_connection()
         try:
             with conn.cursor() as cursor:
-                print(f"💾 Inserting list into database for user_id: {user_id}")
+                print(f"Inserting list into database for user_id: {user_id}")
                 
                 # Insert custom list
                 cursor.execute("""
@@ -132,7 +132,7 @@ def lambda_handler(event, context):
                 list_id = cursor.lastrowid
                 conn.commit()
                 
-                print(f"✅ List created with ID: {list_id}")
+                print(f"List created with ID: {list_id}")
                 
                 # Return created list
                 return {
@@ -153,7 +153,7 @@ def lambda_handler(event, context):
         
         except pymysql.IntegrityError as e:
             conn.rollback()
-            print(f"❌ Database integrity error: {str(e)}")
+            print(f"Database integrity error: {str(e)}")
             return {
                 'statusCode': 409,
                 'headers': headers,
@@ -162,7 +162,7 @@ def lambda_handler(event, context):
         
         except Exception as e:
             conn.rollback()
-            print(f"❌ Database error: {str(e)}")
+            print(f"Database error: {str(e)}")
             return {
                 'statusCode': 500,
                 'headers': headers,
@@ -173,7 +173,7 @@ def lambda_handler(event, context):
             conn.close()
     
     except json.JSONDecodeError as e:
-        print(f"❌ JSON decode error: {str(e)}")
+        print(f"JSON decode error: {str(e)}")
         return {
             'statusCode': 400,
             'headers': headers,
@@ -181,7 +181,7 @@ def lambda_handler(event, context):
         }
     
     except Exception as e:
-        print(f"❌ Unexpected error: {str(e)}")
+        print(f"Unexpected error: {str(e)}")
         return {
             'statusCode': 500,
             'headers': headers,
