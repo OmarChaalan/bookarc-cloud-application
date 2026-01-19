@@ -1,205 +1,246 @@
 import json
 import pymysql
 import os
-from decimal import Decimal
+from datetime import datetime
 
-# RDS Configuration
-DB_HOST = os.environ.get('DB_HOST')
-DB_USER = os.environ.get('DB_USER')
-DB_PASSWORD = os.environ.get('DB_PASSWORD')
-DB_NAME = os.environ.get('DB_NAME')
+# RDS Configuration from environment variables
+DB_HOST = os.environ['DB_HOST']
+DB_USER = os.environ['DB_USER']
+DB_PASSWORD = os.environ['DB_PASSWORD']
+DB_NAME = os.environ['DB_NAME']
 
-def get_db_connection():
-    return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        cursorclass=pymysql.cursors.DictCursor
-    )
-
-def decimal_default(obj):
-    if isinstance(obj, Decimal):
-        return float(obj)
-    raise TypeError
+# CORS headers - apply to all responses
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Content-Type': 'application/json'
+}
 
 def lambda_handler(event, context):
-    print("Event:", json.dumps(event))
+    """
+    Lambda function to update user profile in RDS
+    Triggered by API Gateway PUT /profile
+    """
     
-    # CORS headers
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Allow-Methods': 'GET,OPTIONS',
-        'Content-Type': 'application/json'
-    }
+    print(f"Event: {json.dumps(event)}")
     
-    # Handle OPTIONS request
+    # Handle OPTIONS request for CORS preflight
     if event.get('httpMethod') == 'OPTIONS':
         return {
             'statusCode': 200,
-            'headers': headers,
-            'body': ''
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'message': 'OK'})
         }
     
+    # Get Cognito sub from JWT token
     try:
-        # Extract user info from authorizer (try both formats)
-        authorizer = event.get('requestContext', {}).get('authorizer', {})
+        cognito_sub = event['requestContext']['authorizer']['claims']['sub']
+        print(f"Cognito sub: {cognito_sub}")
+    except KeyError as e:
+        print(f"Authorization error: {str(e)}")
+        return {
+            'statusCode': 401,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'message': 'Unauthorized'})
+        }
+    
+    # Parse request body
+    try:
+        body = json.loads(event['body'])
+        print(f"Request body: {body}")
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"JSON parse error: {str(e)}")
+        return {
+            'statusCode': 400,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'message': 'Invalid JSON body'})
+        }
+    
+    # Get fields to update (only fields that exist in your database)
+    username = body.get('username')
+    display_name = body.get('display_name')
+    bio = body.get('bio')
+    location = body.get('location')
+    # REMOVED: website field
+    profile_image = body.get('profile_image')
+    
+    connection = None
+    
+    try:
+        # Connect to RDS
+        print(f"Connecting to database: {DB_HOST}")
+        connection = pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            connect_timeout=5
+        )
+        print("Database connection successful")
         
-        # Try to get cognito_sub first (for JWT authorizer)
-        cognito_sub = authorizer.get('claims', {}).get('sub') if 'claims' in authorizer else authorizer.get('cognito_sub')
-        
-        # Also try user_id (for custom authorizer)
-        user_id_from_authorizer = authorizer.get('user_id')
-        
-        print(f"Cognito Sub: {cognito_sub}")
-        print(f"User ID from authorizer: {user_id_from_authorizer}")
-        
-        if not cognito_sub and not user_id_from_authorizer:
-            return {
-                'statusCode': 401,
-                'headers': headers,
-                'body': json.dumps({'message': 'Unauthorized. No user identity found.'})
-            }
-        
-        connection = get_db_connection()
-        
-        try:
-            with connection.cursor() as cursor:
-                # Get user_id from cognito_sub if we have it
-                if cognito_sub and not user_id_from_authorizer:
-                    cursor.execute("""
-                        SELECT user_id, role, verification_status
-                        FROM users
-                        WHERE cognito_sub = %s AND is_active = 1
-                    """, (cognito_sub,))
-                    
-                    user = cursor.fetchone()
-                    
-                    if not user:
-                        return {
-                            'statusCode': 404,
-                            'headers': headers,
-                            'body': json.dumps({'message': 'User not found'})
-                        }
-                    
-                    user_id = user['user_id']
-                    user_role = user['role']
-                    verification_status = user['verification_status']
-                else:
-                    user_id = user_id_from_authorizer
-                    # Get user role from database
-                    cursor.execute("""
-                        SELECT role, verification_status
-                        FROM users
-                        WHERE user_id = %s AND is_active = 1
-                    """, (user_id,))
-                    
-                    user = cursor.fetchone()
-                    
-                    if not user:
-                        return {
-                            'statusCode': 404,
-                            'headers': headers,
-                            'body': json.dumps({'message': 'User not found'})
-                        }
-                    
-                    user_role = user['role']
-                    verification_status = user['verification_status']
-                
-                # Check if user is an author
-                if user_role != 'author':
-                    return {
-                        'statusCode': 403,
-                        'headers': headers,
-                        'body': json.dumps({'message': 'Unauthorized. Author access required.'})
-                    }
-                
-                # Check if author is verified
-                if verification_status != 'approved':
-                    return {
-                        'statusCode': 403,
-                        'headers': headers,
-                        'body': json.dumps({
-                            'message': 'Your author account must be verified first',
-                            'verification_status': verification_status
-                        })
-                    }
-                
-                # Get all books uploaded by this author
-                cursor.execute("""
-                    SELECT 
-                        b.book_id,
-                        b.title,
-                        b.summary,
-                        b.isbn,
-                        b.publish_date,
-                        b.cover_image_url,
-                        b.approval_status,
-                        b.rejection_reason,
-                        b.average_rating,
-                        b.created_at,
-                        b.approved_at,
-                        u_approved.username as approved_by,
-                        GROUP_CONCAT(DISTINCT a.name ORDER BY a.name SEPARATOR ', ') as authors,
-                        GROUP_CONCAT(DISTINCT g.genre_name ORDER BY g.genre_name SEPARATOR ', ') as genres
-                    FROM books b
-                    LEFT JOIN users u_approved ON b.approved_by = u_approved.user_id
-                    LEFT JOIN book_author ba ON b.book_id = ba.book_id
-                    LEFT JOIN authors a ON ba.author_id = a.author_id
-                    LEFT JOIN book_genre bg ON b.book_id = bg.book_id
-                    LEFT JOIN genres g ON bg.genre_id = g.genre_id
-                    WHERE b.uploaded_by = %s
-                    GROUP BY b.book_id, b.title, b.summary, b.isbn, b.publish_date,
-                             b.cover_image_url, b.approval_status, b.rejection_reason,
-                             b.average_rating, b.created_at, b.approved_at, u_approved.username
-                    ORDER BY b.created_at DESC
-                """, (user_id,))
-                
-                books = cursor.fetchall()
-                
-                # Format the response
-                formatted_books = []
-                for book in books:
-                    formatted_books.append({
-                        'book_id': book['book_id'],
-                        'title': book['title'],
-                        'summary': book['summary'],
-                        'isbn': book['isbn'],
-                        'publish_date': book['publish_date'].isoformat() if book['publish_date'] else None,
-                        'cover_image_url': book['cover_image_url'],
-                        'approval_status': book['approval_status'],
-                        'rejection_reason': book['rejection_reason'],
-                        'average_rating': float(book['average_rating']) if book['average_rating'] else 0.0,
-                        'authors': book['authors'] or 'Unknown',
-                        'genres': book['genres'] or 'N/A',
-                        'created_at': book['created_at'].isoformat() if book['created_at'] else None,
-                        'approved_at': book['approved_at'].isoformat() if book['approved_at'] else None,
-                        'approved_by': book['approved_by']
-                    })
-                
-                return {
-                    'statusCode': 200,
-                    'headers': headers,
-                    'body': json.dumps({
-                        'books': formatted_books,
-                        'total': len(formatted_books)
-                    }, default=decimal_default)
-                }
-                
-        finally:
-            connection.close()
+        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+            # First, check if user exists and get column names
+            cursor.execute("DESCRIBE users")
+            columns = [col['Field'] for col in cursor.fetchall()]
+            print(f"Available columns: {columns}")
             
-    except Exception as e:
-        print(f"Error: {str(e)}")
+            # Determine the correct cognito column name
+            cognito_column = None
+            if 'cognito_sub' in columns:
+                cognito_column = 'cognito_sub'
+            elif 'cognito_user_id' in columns:
+                cognito_column = 'cognito_user_id'
+            else:
+                print("ERROR: No cognito column found in users table")
+                return {
+                    'statusCode': 500,
+                    'headers': CORS_HEADERS,
+                    'body': json.dumps({'message': 'Database configuration error: missing cognito column'})
+                }
+            
+            print(f"Using cognito column: {cognito_column}")
+            
+            # Build UPDATE query dynamically based on provided fields
+            update_fields = []
+            params = []
+            
+            if username is not None:
+                update_fields.append('username = %s')
+                params.append(username)
+            
+            if display_name is not None:
+                update_fields.append('display_name = %s')
+                params.append(display_name)
+            
+            if bio is not None:
+                update_fields.append('bio = %s')
+                params.append(bio)
+            
+            # Check if location column exists before updating
+            if location is not None and 'location' in columns:
+                update_fields.append('location = %s')
+                params.append(location)
+                print(f"Updating location to: {location}")
+            elif location is not None and 'location' not in columns:
+                print("WARNING: location field provided but column doesn't exist in database")
+            
+            # REMOVED: website handling
+            
+            if profile_image is not None:
+                update_fields.append('profile_image = %s')
+                params.append(profile_image)
+            
+            if not update_fields:
+                return {
+                    'statusCode': 400,
+                    'headers': CORS_HEADERS,
+                    'body': json.dumps({'message': 'No fields to update'})
+                }
+            
+            # Always update the updated_at timestamp if the column exists
+            if 'updated_at' in columns:
+                update_fields.append('updated_at = NOW()')
+            
+            # Add cognito_sub for WHERE clause
+            params.append(cognito_sub)
+            
+            sql = f"""
+                UPDATE users 
+                SET {', '.join(update_fields)}
+                WHERE {cognito_column} = %s
+            """
+            
+            print(f"Executing SQL: {sql}")
+            print(f"With params: {params}")
+            
+            affected_rows = cursor.execute(sql, params)
+            connection.commit()
+            
+            print(f"Affected rows: {affected_rows}")
+            
+            if affected_rows == 0:
+                return {
+                    'statusCode': 404,
+                    'headers': CORS_HEADERS,
+                    'body': json.dumps({'message': 'User not found'})
+                }
+            
+            # Fetch updated user data - build SELECT based on available columns
+            select_columns = []
+            base_columns = ['user_id', 'email', 'username']
+            optional_columns = ['display_name', 'bio', 'location', 'profile_image',  # REMOVED 'website'
+                              'role', 'created_at', 'updated_at']
+            
+            for col in base_columns + optional_columns:
+                if col in columns:
+                    select_columns.append(col)
+            
+            # Always include the cognito column
+            if cognito_column not in select_columns:
+                select_columns.append(cognito_column)
+            
+            select_sql = f"""
+                SELECT {', '.join(select_columns)}
+                FROM users 
+                WHERE {cognito_column} = %s
+            """
+            
+            print(f"Fetching updated user: {select_sql}")
+            cursor.execute(select_sql, (cognito_sub,))
+            
+            result = cursor.fetchone()
+            
+            if not result:
+                return {
+                    'statusCode': 404,
+                    'headers': CORS_HEADERS,
+                    'body': json.dumps({'message': 'User not found after update'})
+                }
+            
+            # Convert datetime objects to strings
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.isoformat()
+            
+            print(f"User updated successfully: {result.get('user_id')}")
+            print(f"Updated location: {result.get('location')}")
+            
+            return {
+                'statusCode': 200,
+                'headers': CORS_HEADERS,
+                'body': json.dumps(result)
+            }
+    
+    except pymysql.MySQLError as e:
+        print(f"Database error: {str(e)}")
+        print(f"Error code: {e.args[0] if e.args else 'Unknown'}")
         import traceback
         traceback.print_exc()
-        
         return {
             'statusCode': 500,
-            'headers': headers,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({
+                'message': 'Database error',
+                'error': str(e),
+                'error_code': e.args[0] if e.args else None
+            })
+        }
+    
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'statusCode': 500,
+            'headers': CORS_HEADERS,
             'body': json.dumps({
                 'message': 'Internal server error',
                 'error': str(e)
             })
         }
+    
+    finally:
+        if connection:
+            connection.close()
+            print("Database connection closed")
