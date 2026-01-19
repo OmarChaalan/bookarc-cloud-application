@@ -81,9 +81,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 token = auth_header.replace('Bearer ', '')
                 jwt_payload = decode_jwt_payload(token)
                 cognito_sub = jwt_payload.get('sub')
-                print(f"🔓 Decoded JWT manually, sub: {cognito_sub}")
+                print(f"Decoded JWT manually, sub: {cognito_sub}")
         
-        print(f"🔐 Cognito sub: {cognito_sub}")
+        print(f"Cognito sub: {cognito_sub}")
         
         user_id = None
         
@@ -100,9 +100,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 if user_result:
                     user_id = user_result['user_id']
-                    print(f"✅ User found: user_id={user_id}")
+                    print(f"User found: user_id={user_id}")
                 else:
-                    print(f"❌ No user found for cognito_sub: {cognito_sub}")
+                    print(f"No user found for cognito_sub: {cognito_sub}")
         
         # Reopen connection if needed
         if not connection:
@@ -116,7 +116,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     (user_id,)
                 )
                 favorite_genre_ids = [row['genre_id'] for row in cursor.fetchall()]
-                print(f"⭐ User's favorite genre IDs: {favorite_genre_ids}")
+                print(f"User's favorite genre IDs: {favorite_genre_ids}")
             
             # Get all genres with book counts
             if user_id:
@@ -154,7 +154,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             genres = cursor.fetchall()
             
-            print(f"📊 Total genres retrieved: {len(genres)}")
+            print(f"Total genres retrieved: {len(genres)}")
             
             # Convert is_favorited to boolean (MySQL returns 0/1)
             favorited_count = 0
@@ -165,7 +165,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     favorited_count += 1
                     print(f"⭐ Favorited genre: {genre['genre_name']} (id={genre['genre_id']}, original_value={original_value})")
             
-            print(f"📊 Total favorited genres: {favorited_count}")
+            print(f"Total favorited genres: {favorited_count}")
         
         return {
             'statusCode': 200,
@@ -178,7 +178,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
     
     except Exception as e:
-        print(f"❌ Error getting genres: {str(e)}")
+        print(f"Error getting genres: {str(e)}")
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         return {
