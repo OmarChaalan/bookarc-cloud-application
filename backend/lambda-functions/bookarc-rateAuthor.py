@@ -2,6 +2,7 @@
 Lambda Function: bookarc-rateAuthor
 Rate an author (1-5 stars) with EMBEDDED notifications
 Endpoint: POST/GET/DELETE /authors/{author_id}/rating
+
 """
 
 import json
@@ -98,7 +99,7 @@ def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 def get_or_create_author(cursor, connection, author_id_param: int) -> Optional[Dict[str, Any]]:
     """Get existing author or create one for verified users"""
     
-    print(f"Looking up author with ID: {author_id_param}")
+    print(f"🔍 Looking up author with ID: {author_id_param}")
     
     # Strategy 1: Try as author_id directly
     cursor.execute("""
@@ -235,7 +236,6 @@ def rate_author(connection, user_id: int, author_id: int, author: Dict, event: D
             connection.commit()
             print(f"Database updated - avg_rating={avg_rating:.2f}, total={total_ratings}")
             
-            # SEND NOTIFICATIONS
             try:
                 print(f"\nCreating NotificationService...")
                 notif_service = NotificationService(connection)
