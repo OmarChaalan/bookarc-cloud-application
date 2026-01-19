@@ -148,17 +148,16 @@ def lambda_handler(event, context):
                 # BASIC STATS
                 # ========================================
                 
-                # 1. Count books by reading status
+                # ✅ 1. Count books in "Completed" list (books_read)
                 cursor.execute("""
-                    SELECT 
-                        status,
-                        COUNT(*) as count
-                    FROM user_reading_status
-                    WHERE user_id = %s
-                    GROUP BY status
+                    SELECT COUNT(DISTINCT lb.book_id) as count
+                    FROM lists l
+                    JOIN list_books lb ON l.list_id = lb.list_id
+                    WHERE l.user_id = %s AND l.name = 'Completed'
                 """, (user_id,))
                 
-                reading_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+                books_read = cursor.fetchone()['count']
+                print(f"Books read (from Completed list): {books_read}")
                 
                 # 2. Count total BOOK reviews
                 cursor.execute("""
@@ -228,6 +227,7 @@ def lambda_handler(event, context):
                         ar.created_at as rated_at,
                         a.author_id,
                         a.name as author_name,
+                        a.user_id,
                         COALESCE(u.profile_image, '') as author_avatar
                     FROM author_ratings ar
                     JOIN authors a ON ar.author_id = a.author_id
@@ -243,7 +243,8 @@ def lambda_handler(event, context):
                         'author_name': row['author_name'],
                         'author_avatar': row['author_avatar'],
                         'rating_value': row['rating_value'],
-                        'rated_at': row['rated_at']
+                        'rated_at': row['rated_at'],
+                        'user_id': row['user_id']
                     })
                 
                 print(f"Author ratings: {len(author_ratings)}")
@@ -369,7 +370,7 @@ def lambda_handler(event, context):
                     'total_book_reviews': total_book_reviews,
                     'total_author_reviews': total_author_reviews,
                     'total_ratings': total_ratings,
-                    'books_read': reading_stats.get('completed', 0),
+                    'books_read': books_read,  # ✅ Now from Completed list
                     'followers': followers_count,
                     'following': following_users + following_authors,
                     
