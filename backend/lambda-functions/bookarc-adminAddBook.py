@@ -204,7 +204,7 @@ def lambda_handler(event, context):
                 connection.commit()
                 
                 print(f"Book '{title}' (ID: {book_id}) added successfully by admin {admin_user_id}")
-            
+                
                 return cors_response(200, {
                     'message': 'Book added successfully',
                     'book': {
