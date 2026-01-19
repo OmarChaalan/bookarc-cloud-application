@@ -29,6 +29,30 @@ def get_db_connection():
         cursorclass=pymysql.cursors.DictCursor
     )
 
+def send_notification(connection, user_id, message, notification_type='profile_update'):
+    """
+    Send a notification to the user
+    
+    Args:
+        connection: Database connection
+        user_id: User ID to notify
+        message: Notification message
+        notification_type: Type of notification
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO notifications 
+                (user_id, message, type, audience_type, is_read, created_at)
+                VALUES (%s, %s, %s, 'all', FALSE, NOW())
+            """, (user_id, message, notification_type))
+            connection.commit()
+            print(f"Notification sent to user {user_id}: {message}")
+            return True
+    except Exception as e:
+        print(f"Failed to send notification: {str(e)}")
+        return False
+
 def lambda_handler(event, context):
     """
     Upload profile picture to S3 and update user record
@@ -46,6 +70,8 @@ def lambda_handler(event, context):
         cognito_sub = body.get('cognitoSub')
         image_data = body.get('image')
         content_type = body.get('contentType', 'image/jpeg')
+        
+        print(f"Profile picture upload request for cognito_sub: {cognito_sub}")
         
         # Validation
         if not cognito_sub:
@@ -85,7 +111,9 @@ def lambda_handler(event, context):
         # Decode base64 image
         try:
             image_bytes = base64.b64decode(image_data)
+            print(f"Image decoded, size: {len(image_bytes)} bytes")
         except Exception as e:
+            print(f"Base64 decode error: {str(e)}")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -98,6 +126,7 @@ def lambda_handler(event, context):
         
         # Check file size
         if len(image_bytes) > MAX_SIZE:
+            print(f"Image too large: {len(image_bytes)} bytes")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -121,6 +150,7 @@ def lambda_handler(event, context):
                 user = cursor.fetchone()
                 
                 if not user:
+                    print(f"User not found for cognito_sub: {cognito_sub}")
                     return {
                         'statusCode': 404,
                         'headers': {
@@ -134,9 +164,13 @@ def lambda_handler(event, context):
                 user_id = user['user_id']
                 old_profile_image = user['profile_image']
                 
+                print(f"User found: user_id={user_id}")
+                
                 # Generate unique filename
                 file_extension = content_type.split('/')[-1]
                 filename = f"profile-pictures/{user_id}/{uuid.uuid4()}.{file_extension}"
+                
+                print(f"Uploading to S3: {filename}")
                 
                 # Upload to S3
                 s3_client.put_object(
@@ -153,6 +187,8 @@ def lambda_handler(event, context):
                 # Build S3 URL
                 s3_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{filename}"
                 
+                print(f"S3 upload successful: {s3_url}")
+                
                 # Update database
                 cursor.execute(
                     "UPDATE users SET profile_image = %s, updated_at = NOW() WHERE user_id = %s",
@@ -160,11 +196,30 @@ def lambda_handler(event, context):
                 )
                 connection.commit()
                 
+                print(f"Database updated for user {user_id}")
+                
+                # SEND NOTIFICATION
+                is_first_upload = not old_profile_image or old_profile_image == ''
+                
+                if is_first_upload:
+                    notification_message = "🎉 Welcome! Your profile picture has been uploaded successfully."
+                else:
+                    notification_message = "✨ Your profile picture has been updated successfully."
+                
+                # Send the notification
+                send_notification(
+                    connection=connection,
+                    user_id=user_id,
+                    message=notification_message,
+                    notification_type='profile_update'
+                )
+                
                 # Delete old profile image from S3 if exists
                 if old_profile_image and old_profile_image.startswith(f"https://{S3_BUCKET}"):
                     try:
                         old_key = old_profile_image.split('.com/')[-1]
                         s3_client.delete_object(Bucket=S3_BUCKET, Key=old_key)
+                        print(f"Deleted old profile image: {old_key}")
                     except Exception as e:
                         print(f"Error deleting old image: {str(e)}")
                         # Don't fail the request if deletion fails
@@ -188,6 +243,8 @@ def lambda_handler(event, context):
             
     except Exception as e:
         print(f"Error: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return {
             'statusCode': 500,
             'headers': {
