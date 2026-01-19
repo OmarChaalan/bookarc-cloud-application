@@ -1,15 +1,15 @@
 """
-Uses access token from request body instead of header
-Includes notification on successful password change
+lambda-changePassword.py - FIXED VERSION
+Handles password changes via Cognito
+Uses access token from request body
 """
 
 import json
 import boto3
-import pymysql
 import os
 from botocore.exceptions import ClientError
-from notification_service import NotificationService
 
+# Initialize Cognito client
 cognito_client = boto3.client('cognito-idp', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
 
 CORS_HEADERS = {
@@ -19,19 +19,20 @@ CORS_HEADERS = {
     'Content-Type': 'application/json'
 }
 
-def get_db_connection():
-    """Create database connection"""
-    return pymysql.connect(
-        host=os.environ.get('DB_HOST'),
-        user=os.environ.get('DB_USER'),
-        password=os.environ.get('DB_PASSWORD'),
-        database=os.environ.get('DB_NAME'),
-        cursorclass=pymysql.cursors.DictCursor
-    )
-
 def lambda_handler(event, context):
+    """
+    Main handler for password change requests
+    
+    Request body should contain:
+    {
+        "oldPassword": "current password",
+        "newPassword": "new password",
+        "accessToken": "Cognito access token"
+    }
+    """
     print(f"Event: {json.dumps(event)}")
     
+    # Handle CORS preflight
     if event.get('httpMethod') == 'OPTIONS':
         return {
             'statusCode': 200,
@@ -43,7 +44,9 @@ def lambda_handler(event, context):
         # Parse request body
         try:
             body = json.loads(event.get('body', '{}'))
-        except json.JSONDecodeError:
+            print(f"Parsed body: {json.dumps({k: '***' if 'password' in k.lower() or 'token' in k.lower() else v for k, v in body.items()})}")
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {str(e)}")
             return {
                 'statusCode': 400,
                 'headers': CORS_HEADERS,
@@ -53,12 +56,14 @@ def lambda_handler(event, context):
                 })
             }
         
+        # Extract and validate input
         old_password = body.get('oldPassword')
         new_password = body.get('newPassword')
-        access_token = body.get('accessToken')  # Get from body instead of header
+        access_token = body.get('accessToken')
         
-        # Validate input
+        # Validation
         if not old_password or not new_password:
+            print("Missing password fields")
             return {
                 'statusCode': 400,
                 'headers': CORS_HEADERS,
@@ -69,6 +74,7 @@ def lambda_handler(event, context):
             }
         
         if not access_token:
+            print("Missing access token")
             return {
                 'statusCode': 401,
                 'headers': CORS_HEADERS,
@@ -79,6 +85,7 @@ def lambda_handler(event, context):
             }
         
         if len(new_password) < 8:
+            print("New password too short")
             return {
                 'statusCode': 400,
                 'headers': CORS_HEADERS,
@@ -89,6 +96,7 @@ def lambda_handler(event, context):
             }
         
         if old_password == new_password:
+            print("Same password provided")
             return {
                 'statusCode': 400,
                 'headers': CORS_HEADERS,
@@ -98,7 +106,8 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Change password in Cognito using access token from body
+        # Change password in Cognito
+        print("Attempting to change password in Cognito...")
         try:
             response = cognito_client.change_password(
                 PreviousPassword=old_password,
@@ -107,40 +116,11 @@ def lambda_handler(event, context):
             )
             
             print(f"Password changed successfully in Cognito")
+            print(f"Cognito response metadata: {response.get('ResponseMetadata', {})}")
             
-            # CREATE NOTIFICATION
-            # Get user_id from Cognito token to send notification
+            # Optional: Send notification (only if notification system is set up)
             try:
-                # Get user info from access token
-                user_info = cognito_client.get_user(AccessToken=access_token)
-                cognito_sub = None
-                
-                for attr in user_info.get('UserAttributes', []):
-                    if attr['Name'] == 'sub':
-                        cognito_sub = attr['Value']
-                        break
-                
-                if cognito_sub:
-                    # Connect to database to get user_id
-                    conn = get_db_connection()
-                    try:
-                        with conn.cursor() as cursor:
-                            cursor.execute(
-                                "SELECT user_id FROM users WHERE cognito_sub = %s",
-                                (cognito_sub,)
-                            )
-                            user = cursor.fetchone()
-                            
-                            if user:
-                                # Send notification
-                                notif_service = NotificationService(conn)
-                                notif_service.notify_password_changed(user['user_id'])
-                                print(f"Notification sent to user {user['user_id']}")
-                    finally:
-                        conn.close()
-                else:
-                    print("Could not extract cognito_sub from token")
-                    
+                send_password_change_notification(access_token)
             except Exception as notif_error:
                 # Don't fail the password change if notification fails
                 print(f"Failed to send notification: {str(notif_error)}")
@@ -160,6 +140,7 @@ def lambda_handler(event, context):
             
             print(f"Cognito Error: {error_code} - {error_message}")
             
+            # Handle specific Cognito errors
             if error_code == 'NotAuthorizedException':
                 return {
                     'statusCode': 401,
@@ -187,6 +168,15 @@ def lambda_handler(event, context):
                         'message': 'Too many attempts. Please try again later'
                     })
                 }
+            elif error_code == 'InvalidParameterException':
+                return {
+                    'statusCode': 400,
+                    'headers': CORS_HEADERS,
+                    'body': json.dumps({
+                        'error': 'Invalid Parameter',
+                        'message': error_message
+                    })
+                }
             else:
                 return {
                     'statusCode': 500,
@@ -206,6 +196,80 @@ def lambda_handler(event, context):
             'headers': CORS_HEADERS,
             'body': json.dumps({
                 'error': 'Internal Server Error',
-                'message': str(e)
+                'message': 'An unexpected error occurred'
             })
         }
+
+
+def send_password_change_notification(access_token):
+    """
+    Optional: Send notification when password is changed
+    Only runs if database and notification system are properly configured
+    """
+    try:
+        # Only attempt if we have DB environment variables
+        if not all([
+            os.environ.get('DB_HOST'),
+            os.environ.get('DB_USER'),
+            os.environ.get('DB_PASSWORD'),
+            os.environ.get('DB_NAME')
+        ]):
+            print("Database not configured, skipping notification")
+            return
+        
+        import pymysql
+        
+        # Get user info from Cognito
+        user_info = cognito_client.get_user(AccessToken=access_token)
+        cognito_sub = None
+        
+        for attr in user_info.get('UserAttributes', []):
+            if attr['Name'] == 'sub':
+                cognito_sub = attr['Value']
+                break
+        
+        if not cognito_sub:
+            print("Could not extract cognito_sub from token")
+            return
+        
+        # Connect to database
+        conn = pymysql.connect(
+            host=os.environ.get('DB_HOST'),
+            user=os.environ.get('DB_USER'),
+            password=os.environ.get('DB_PASSWORD'),
+            database=os.environ.get('DB_NAME'),
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        
+        try:
+            with conn.cursor() as cursor:
+                # Get user_id
+                cursor.execute(
+                    "SELECT user_id FROM users WHERE cognito_sub = %s",
+                    (cognito_sub,)
+                )
+                user = cursor.fetchone()
+                
+                if user:
+                    # Create notification
+                    cursor.execute("""
+                        INSERT INTO notifications (user_id, message, type, audience_type, is_read)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (
+                        user['user_id'],
+                        'Your password was successfully changed. If you did not make this change, please contact support immediately.',
+                        'security',
+                        'all',
+                        False
+                    ))
+                    conn.commit()
+                    print(f"Notification sent to user {user['user_id']}")
+                else:
+                    print("User not found in database")
+        finally:
+            conn.close()
+            
+    except ImportError:
+        print("pymysql not available, skipping notification")
+    except Exception as e:
+        print(f"Notification error (non-critical): {str(e)}")
