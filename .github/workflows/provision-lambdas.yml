@@ -48,7 +48,8 @@ jobs:
             cd "temp_$function_name"
             zip -q function.zip lambda_function.py
             
-            aws lambda create-function \
+            # Try to create the function
+            if aws lambda create-function \
               --function-name "$function_name" \
               --runtime python3.14 \
               --role $ROLE_ARN \
@@ -59,19 +60,33 @@ jobs:
               --vpc-config SubnetIds=$VPC_SUBNET_1,$VPC_SUBNET_2,SecurityGroupIds=$SECURITY_GROUP \
               --environment "Variables={DB_HOST=$DB_HOST,DB_USER=$DB_USER,DB_PASSWORD=$DB_PASSWORD,DB_NAME=$DB_NAME}" \
               --layers $LAYER_ARN \
-              --region $AWS_REGION 2>/dev/null && echo "✓ Created $function_name" || echo "Function exists, updating..."
-            
-            aws lambda update-function-code \
-              --function-name "$function_name" \
-              --zip-file fileb://function.zip \
-              --region $AWS_REGION
-            
-            aws lambda update-function-configuration \
-              --function-name "$function_name" \
-              --environment "Variables={DB_HOST=$DB_HOST,DB_USER=$DB_USER,DB_PASSWORD=$DB_PASSWORD,DB_NAME=$DB_NAME}" \
-              --vpc-config SubnetIds=$VPC_SUBNET_1,$VPC_SUBNET_2,SecurityGroupIds=$SECURITY_GROUP \
-              --layers $LAYER_ARN \
-              --region $AWS_REGION
+              --region $AWS_REGION 2>/dev/null; then
+              
+              echo "✓ Created $function_name, waiting for it to be active..."
+              
+              # Wait for function to be active
+              aws lambda wait function-active --function-name "$function_name" --region $AWS_REGION
+              
+            else
+              echo "Function exists, updating..."
+              
+              # Update function code
+              aws lambda update-function-code \
+                --function-name "$function_name" \
+                --zip-file fileb://function.zip \
+                --region $AWS_REGION
+              
+              # Wait for update to complete
+              aws lambda wait function-updated --function-name "$function_name" --region $AWS_REGION
+              
+              # Update configuration
+              aws lambda update-function-configuration \
+                --function-name "$function_name" \
+                --environment "Variables={DB_HOST=$DB_HOST,DB_USER=$DB_USER,DB_PASSWORD=$DB_PASSWORD,DB_NAME=$DB_NAME}" \
+                --vpc-config SubnetIds=$VPC_SUBNET_1,$VPC_SUBNET_2,SecurityGroupIds=$SECURITY_GROUP \
+                --layers $LAYER_ARN \
+                --region $AWS_REGION
+            fi
             
             cd ..
             rm -rf "temp_$function_name"
