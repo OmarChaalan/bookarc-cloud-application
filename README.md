@@ -21,8 +21,8 @@ This project was built as my graduation capstone to demonstrate real-world cloud
 | ⭐ **Reviews & Ratings** | Write reviews and rate books |
 | 📋 **Reading Lists** | Create and manage personal reading lists |
 | 💰 **Price Comparison** | Compare book prices across sources |
-| 🤖 **Personalized Recommendations** | AI-powered recommendations via AWS Personalize |
-| 🔔 **Notifications** | Real-time system notifications via AWS SNS |
+| 🤖 **Personalized Recommendations** | Custom recommendation logic powered by AWS Lambda |
+| 🔔 **Notifications** | System notifications powered by AWS Lambda |
 | 🔐 **Secure Authentication** | User registration, login, and session management via AWS Cognito |
 
 ---
@@ -36,8 +36,7 @@ BookArc follows a **serverless, event-driven architecture** hosted entirely on A
 - User data is stored in **Amazon RDS (MySQL)**, running inside a private subnet in a custom **VPC** for network isolation.
 - A **Bastion Host (EC2)** in a public subnet is used for secure database administration — the RDS instance is never exposed to the internet.
 - **AWS Cognito** handles all authentication, token management, and user pools.
-- **AWS Personalize** powers the recommendation engine based on user behavior.
-- **AWS SNS** delivers notifications to users when events occur (new reviews, book updates, etc.).
+- **AWS Lambda** also powers the recommendation engine and notification system — both implemented as dedicated Lambda functions triggered by user activity.
 
 📐 Architecture Diagram: [`docs/architecture/bookarc-cloud-architecture.png`](docs/architecture/bookarc-cloud-architecture.png)  
 📄 Detailed Architecture Explanation: [`docs/architecture/architecture-explanation.md`](docs/architecture/architecture-explanation.md)
@@ -50,7 +49,7 @@ BookArc follows a **serverless, event-driven architecture** hosted entirely on A
 
 | Service | Purpose |
 |---|---|
-| **AWS Lambda** | Serverless compute for API logic and background processing |
+| **AWS Lambda** | Serverless compute for API logic, recommendation engine, and notification system |
 | **Amazon API Gateway** | REST API management and request routing |
 | **Amazon RDS (MySQL)** | Relational database for structured data |
 | **Amazon Cognito** | User authentication and authorization |
@@ -58,8 +57,6 @@ BookArc follows a **serverless, event-driven architecture** hosted entirely on A
 | **Amazon CloudFront** | Global CDN for fast content delivery |
 | **Amazon VPC** | Network isolation with public/private subnets |
 | **AWS EC2** | Bastion Host for secure database administration |
-| **AWS Personalize** | Machine learning-based book recommendations |
-| **Amazon SNS** | Push notifications to users |
 
 ### 🧱 Infrastructure as Code
 
